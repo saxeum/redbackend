@@ -5,6 +5,9 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 
+# Fixed identity for the non-superuser used by API tests.
+TEST_USER_EMAIL = "test@example.com"
+
 
 def random_lower_string() -> str:
     return "".join(random.choices(string.ascii_lowercase, k=32))

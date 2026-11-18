@@ -1,7 +1,6 @@
 __pycache__
 app.egg-info
 *.pyc
-.mypy_cache
 .pytest_cache
 .ruff_cache
 .coverage
@@ -11,4 +10,3 @@ htmlcov
 .venv
 .env
 openapi.json
-emails/node_modules

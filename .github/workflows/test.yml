@@ -23,10 +23,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      mailpit:
-        image: axllent/mailpit
-        ports:
-          - 1025:1025
     env:
       FASTAPI_ENV: development
       PROJECT_NAME: Red Backend
@@ -35,10 +31,6 @@ jobs:
       FIRST_SUPERUSER_PASSWORD: changethis
       POSTGRES_PASSWORD: changethis
       DATABASE_URL: postgresql://postgres:changethis@localhost:5432/app
-      SMTP_HOST: localhost
-      SMTP_PORT: "1025"
-      SMTP_TLS: "false"
-      EMAILS_FROM_EMAIL: info@example.com
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -47,7 +39,9 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         run: uv sync
+      - name: Lint
+        run: make lint
       - name: Prepare database
-        run: uv run bash scripts/prestart.sh
+        run: make db-seed
       - name: Run tests
-        run: uv run bash scripts/test.sh
+        run: make test-ci

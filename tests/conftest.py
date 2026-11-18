@@ -1,27 +1,46 @@
 from collections.abc import Generator
+from typing import Any, cast
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, delete
+from psycopg.rows import dict_row
 
+from app import crud
 from app.core.config import settings
-from app.core.db import engine, init_db
+from app.core.db import DBConnection
 from app.main import app
-from app.models import Item, User
+from app.models import UserCreate
 from tests.utils.user import authentication_token_from_email
-from tests.utils.utils import get_superuser_token_headers
+from tests.utils.utils import TEST_USER_EMAIL, get_superuser_token_headers
 
 
 @pytest.fixture(scope="session", autouse=True)
-def db() -> Generator[Session]:
-    with Session(engine) as session:
-        init_db(session)
-        yield session
-        statement = delete(Item)
-        session.execute(statement)
-        statement = delete(User)
-        session.execute(statement)
-        session.commit()
+def db() -> Generator[DBConnection]:
+    # A dedicated autocommit connection: rows written through crud are visible
+    # immediately to the application's connection pool.
+    # psycopg's connect() overload types row_factory for the default tuple rows;
+    # passing it through **kwargs keeps the runtime behaviour and the DictRow type.
+    conn_options: dict[str, Any] = {"row_factory": dict_row}
+    conn = cast(
+        DBConnection,
+        psycopg.connect(str(settings.DATABASE_URL), autocommit=True, **conn_options),
+    )
+    try:
+        if not crud.get_user_by_email(conn=conn, email=settings.FIRST_SUPERUSER):
+            crud.create_user(
+                conn=conn,
+                user_create=UserCreate(
+                    email=settings.FIRST_SUPERUSER,
+                    password=settings.FIRST_SUPERUSER_PASSWORD,
+                    is_superuser=True,
+                ),
+            )
+        yield conn
+        conn.execute("DELETE FROM item")
+        conn.execute('DELETE FROM "user"')
+    finally:
+        conn.close()
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +55,5 @@ def superuser_token_headers(client: TestClient) -> dict[str, str]:
 
 
 @pytest.fixture(scope="module")
-def normal_user_token_headers(client: TestClient, db: Session) -> dict[str, str]:
-    return authentication_token_from_email(
-        client=client, email=settings.EMAIL_TEST_USER, db=db
-    )
+def normal_user_token_headers(client: TestClient, db: DBConnection) -> dict[str, str]:
+    return authentication_token_from_email(client=client, email=TEST_USER_EMAIL, db=db)
