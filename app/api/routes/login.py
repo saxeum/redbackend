@@ -19,7 +19,10 @@ router = APIRouter(tags=["login"])
 @router.post(
     "/login/access-token",
     responses=api_responses(
-        ErrorCode.INVALID_CREDENTIALS, ErrorCode.INACTIVE_USER, auth=False
+        ErrorCode.INVALID_CREDENTIALS,
+        ErrorCode.INACTIVE_USER,
+        ErrorCode.PASSWORD_LOGIN_DISABLED,
+        auth=False,
     ),
 )
 def login_access_token(

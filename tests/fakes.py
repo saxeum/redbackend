@@ -20,10 +20,11 @@ CONN = cast(DBConnection, object())
 def make_user(
     *,
     email: str = "user@example.com",
-    hashed_password: str = "hash",
+    hashed_password: str | None = "hash",
     full_name: str | None = None,
     is_active: bool = True,
     is_superuser: bool = False,
+    google_sub: str | None = None,
     user_id: uuid.UUID | None = None,
 ) -> User:
     return User(
@@ -33,6 +34,7 @@ def make_user(
         is_active=is_active,
         is_superuser=is_superuser,
         hashed_password=hashed_password,
+        google_sub=google_sub,
         created_at=datetime.now(UTC),
     )
 
@@ -64,9 +66,18 @@ class FakeUserRepository:
     def get_by_email(self, *, conn: DBConnection, email: str) -> User | None:
         return next((u for u in self.users.values() if u.email == email), None)
 
+    def get_by_google_sub(self, *, conn: DBConnection, google_sub: str) -> User | None:
+        return next(
+            (u for u in self.users.values() if u.google_sub == google_sub), None
+        )
+
     def insert(self, *, conn: DBConnection, user: User) -> User:
         if self.get_by_email(conn=conn, email=user.email):
             raise Conflict(ErrorCode.EMAIL_TAKEN_ON_CREATE)
+        if user.google_sub and self.get_by_google_sub(
+            conn=conn, google_sub=user.google_sub
+        ):
+            raise Conflict(ErrorCode.GOOGLE_ACCOUNT_TAKEN)
         self.users[user.id] = user
         return user
 

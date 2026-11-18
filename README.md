@@ -56,6 +56,7 @@ Testing is layered to match the code: each layer mocks the one below it.
 |---|---|---|
 | Controllers (`app/api`) | `tests/api/test_controllers_*`, `test_deps.py` | services mocked (`monkeypatch` + `app.dependency_overrides`) |
 | Services (`app/services`) | `tests/services/` | repositories mocked (`tests/fakes.py`) |
+| Core (`app/core`) | `tests/core/` | JWKS replaced with a locally generated key |
 | Repositories (`app/repositories`) | `tests/repositories/` | **real PostgreSQL — not mocked** |
 | Contract | `test_mappers.py`, `test_error_mapping.py`, `test_openapi.py` | none |
 | Architecture | `test_layering.py` | none (AST) |
@@ -87,6 +88,40 @@ make format    # ruff format
 `[tool.basedpyright]` sets `typeCheckingMode = "standard"`, resolves imports
 from `.venv`, and covers `app/`, `tests/` and `migrations/`. CI runs the same
 `make lint`.
+
+## Authentication
+
+Two ways to obtain a bearer credential:
+
+| Flow | Endpoint | Credential |
+|---|---|---|
+| Google sign-in (OIDC) | `POST /api/v1/auth/google` | a Google **ID token** |
+| Password grant (dev only) | `POST /api/v1/login/access-token` | our HS256 JWT |
+
+**Google sign-in.** The SPA runs the Google flow and posts the resulting ID
+token as `{"id_token": "..."}`. This service is an OIDC *resource server*: it
+verifies the token against Google's JWKS (signature, `iss`, `aud`, `exp`) and
+requires a verified email. The same ID token is then accepted as the bearer
+credential on every authenticated route, so there is no server-side session.
+
+`POST /auth/google` also resolves the token to a local account: first sign-in
+creates a `user` row with no password; an email that already exists is *linked*
+by storing Google's `sub` in `user.google_sub`, and the local password keeps
+working. Accounts deactivated here cannot sign in through Google either.
+
+Configuration (see `.env.example`):
+
+| Variable | Meaning |
+|---|---|
+| `GOOGLE_CLIENT_ID` | audience the ID tokens are issued for. Shared with zuchat. Unset means Google sign-in fails closed. |
+| `ALLOWED_EMAILS` | comma-separated allowlist of Google accounts. Empty means any verified account. |
+| `ENABLE_PASSWORD_LOGIN` | `false` disables the password grant and rejects outstanding password-grant tokens. |
+
+Only the client id is needed: the token's `aud` is that id, so no client secret
+is stored here. The OAuth client's authorised redirect URIs belong to the
+frontend. Invalid, expired or wrongly-scoped tokens return `401` with a generic
+detail and a `WWW-Authenticate: Bearer` header; an account outside the
+allowlist returns `403`.
 
 ## Migrations
 

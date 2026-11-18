@@ -41,6 +41,14 @@ def _clear_dependency_overrides() -> Generator[None]:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the suite independent of whatever the local .env happens to say."""
+    monkeypatch.setattr(settings, "ALLOWED_EMAILS", "")
+    monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", True)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", None)
+
+
 @pytest.fixture
 def as_user() -> Callable[[User], None]:
     """Act as an authenticated actor with the service layer mocked out."""

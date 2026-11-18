@@ -17,8 +17,9 @@ class User:
     full_name: str | None
     is_active: bool
     is_superuser: bool
-    hashed_password: str
+    hashed_password: str | None
     created_at: datetime
+    google_sub: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

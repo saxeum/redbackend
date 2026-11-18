@@ -66,10 +66,17 @@ UNAVAILABLE_ERRORS: tuple[type[Exception], ...] = (
 def error_response(exc: DomainError, *, status_code: int | None = None) -> JSONResponse:
     """Decorate a domain error as an HTTP response."""
     spec = MESSAGES[exc.code]
+    status = status_code if status_code is not None else spec.status_code
     return JSONResponse(
-        status_code=status_code if status_code is not None else spec.status_code,
+        status_code=status,
         content={"detail": spec.message},
+        headers=auth_challenge(status),
     )
+
+
+def auth_challenge(status_code: int) -> dict[str, str]:
+    """RFC 6750: a 401 tells the client which scheme to use."""
+    return {"WWW-Authenticate": "Bearer"} if status_code == 401 else {}
 
 
 async def _domain_handler(_: Request, exc: Exception) -> Response:
@@ -83,7 +90,11 @@ async def _domain_handler(_: Request, exc: Exception) -> Response:
         return JSONResponse(
             status_code=500, content={"detail": "Internal server error"}
         )
-    return JSONResponse(status_code=spec.status_code, content={"detail": spec.message})
+    return JSONResponse(
+        status_code=spec.status_code,
+        content={"detail": spec.message},
+        headers=auth_challenge(spec.status_code),
+    )
 
 
 def _unavailable_handler() -> Callable[[Request, Exception], Awaitable[Response]]:

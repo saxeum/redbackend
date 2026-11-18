@@ -12,14 +12,21 @@ from app.repositories import users as user_repo
 from tests.utils.utils import random_email
 
 
-def _user(*, email: str | None = None, created_at: datetime | None = None) -> User:
+def _user(
+    *,
+    email: str | None = None,
+    created_at: datetime | None = None,
+    hashed_password: str | None = "hash",
+    google_sub: str | None = None,
+) -> User:
     return User(
         id=uuid.uuid4(),
         email=email or random_email(),
         full_name=None,
         is_active=True,
         is_superuser=False,
-        hashed_password="hash",
+        hashed_password=hashed_password,
+        google_sub=google_sub,
         created_at=created_at or datetime.now(UTC),
     )
 
@@ -83,3 +90,33 @@ def test_delete_reports_whether_a_row_existed(db: DBConnection) -> None:
 
     assert user_repo.delete(conn=db, user_id=user.id) is True
     assert user_repo.delete(conn=db, user_id=user.id) is False
+
+
+def test_google_subject_is_readable_back(db: DBConnection) -> None:
+    subject = f"google-{uuid.uuid4().hex}"
+    user = _user(google_sub=subject)
+    user_repo.insert(conn=db, user=user)
+
+    assert user_repo.get_by_google_sub(conn=db, google_sub=subject) == user
+
+
+def test_google_subject_lookup_misses(db: DBConnection) -> None:
+    assert user_repo.get_by_google_sub(conn=db, google_sub="nobody") is None
+
+
+def test_google_only_account_has_no_password(db: DBConnection) -> None:
+    user = _user(hashed_password=None, google_sub=f"google-{uuid.uuid4().hex}")
+
+    stored = user_repo.insert(conn=db, user=user)
+
+    assert stored.hashed_password is None
+
+
+def test_google_subject_is_unique(db: DBConnection) -> None:
+    subject = f"google-{uuid.uuid4().hex}"
+    user_repo.insert(conn=db, user=_user(google_sub=subject))
+
+    with pytest.raises(Conflict) as exc:
+        user_repo.insert(conn=db, user=_user(google_sub=subject))
+
+    assert exc.value.code is ErrorCode.GOOGLE_ACCOUNT_TAKEN

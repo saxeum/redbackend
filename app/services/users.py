@@ -5,7 +5,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.config import settings
 from app.core.db import DBConnection, commit
+from app.core.google import GoogleIdentity
 from app.core.security import get_password_hash, verify_password
 from app.domain.commands import CreateUser, UpdateUser
 from app.domain.errors import (
@@ -28,6 +30,18 @@ DUMMY_HASH = "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$YTU4NGM5ZTZm
 def _require_superuser(actor: User) -> None:
     if not actor.is_superuser:
         raise PermissionDenied(ErrorCode.INSUFFICIENT_PRIVILEGES)
+
+
+def _require_active(user: User) -> User:
+    if not user.is_active:
+        raise InactiveUser(ErrorCode.INACTIVE_USER)
+    return user
+
+
+def require_password_login() -> None:
+    """Gate the password grant; OIDC sign-in is unaffected."""
+    if not settings.ENABLE_PASSWORD_LOGIN:
+        raise InvalidOperation(ErrorCode.PASSWORD_LOGIN_DISABLED)
 
 
 def _changes(cmd: UpdateUser) -> dict[str, Any]:
@@ -92,16 +106,17 @@ def ensure_superuser(*, conn: DBConnection, email: str, password: str) -> None:
 
 
 def authenticate(*, conn: DBConnection, email: str, password: str) -> User:
+    require_password_login()
     user = user_repo.get_by_email(conn=conn, email=email)
-    if not user:
-        # Prove the same amount of work whether or not the email exists.
+    if not user or user.hashed_password is None:
+        # Prove the same amount of work whether or not a password exists: an
+        # account created through Google has no local password to check.
         verify_password(password, DUMMY_HASH)
         raise InvalidCredentials(ErrorCode.INVALID_CREDENTIALS)
     verified, updated_password_hash = verify_password(password, user.hashed_password)
     if not verified:
         raise InvalidCredentials(ErrorCode.INVALID_CREDENTIALS)
-    if not user.is_active:
-        raise InactiveUser(ErrorCode.INACTIVE_USER)
+    _require_active(user)
     if updated_password_hash:
         updated = user_repo.update(
             conn=conn,
@@ -118,9 +133,51 @@ def get_active_user(*, conn: DBConnection, user_id: uuid.UUID) -> User:
     user = user_repo.get_by_id(conn=conn, user_id=user_id)
     if not user:
         raise NotFound(ErrorCode.USER_NOT_FOUND)
-    if not user.is_active:
-        raise InactiveUser(ErrorCode.INACTIVE_USER)
-    return user
+    return _require_active(user)
+
+
+def login_with_google(*, conn: DBConnection, identity: GoogleIdentity) -> User:
+    """Resolve a verified Google identity to a local account.
+
+    First sign-in creates the account; an existing account with the same email
+    is linked by storing Google's subject. Users deactivated here cannot sign in
+    through Google either.
+    """
+    allowed = settings.allowed_emails
+    email = identity.email.lower()
+    if allowed and email not in allowed:
+        raise PermissionDenied(ErrorCode.EMAIL_NOT_ALLOWED)
+
+    user = user_repo.get_by_google_sub(conn=conn, google_sub=identity.subject)
+    if user is not None:
+        return _require_active(user)
+
+    existing = user_repo.get_by_email(conn=conn, email=email)
+    if existing is not None:
+        _require_active(existing)
+        linked = user_repo.update(
+            conn=conn,
+            user_id=existing.id,
+            changes={"google_sub": identity.subject},
+        )
+        commit(conn)
+        return linked or existing
+
+    created = user_repo.insert(
+        conn=conn,
+        user=User(
+            id=uuid.uuid4(),
+            email=email,
+            full_name=identity.name,
+            is_active=True,
+            is_superuser=False,
+            hashed_password=None,
+            google_sub=identity.subject,
+            created_at=datetime.now(UTC),
+        ),
+    )
+    commit(conn)
+    return created
 
 
 def get_user(*, conn: DBConnection, user_id: uuid.UUID, actor: User) -> User:
@@ -169,6 +226,9 @@ def update_me(*, conn: DBConnection, actor: User, cmd: UpdateUser) -> User:
 def change_password(
     *, conn: DBConnection, actor: User, current_password: str, new_password: str
 ) -> None:
+    if actor.hashed_password is None:
+        # Google-only accounts have no local password to change.
+        raise InvalidCredentials(ErrorCode.INCORRECT_PASSWORD)
     verified, _ = verify_password(current_password, actor.hashed_password)
     if not verified:
         raise InvalidCredentials(ErrorCode.INCORRECT_PASSWORD)

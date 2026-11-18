@@ -1,5 +1,7 @@
 """The auth dependency translates tokens into domain errors or an actor."""
 
+import base64
+import json
 from datetime import timedelta
 from typing import Any
 
@@ -7,6 +9,8 @@ import pytest
 
 from app.api.deps import get_current_user
 from app.core import security
+from app.core.config import settings
+from app.core.google import GoogleIdentity
 from app.domain.errors import (
     AuthenticationFailed,
     ErrorCode,
@@ -16,9 +20,22 @@ from app.domain.errors import (
 from app.domain.models import User
 from tests.fakes import CONN, make_user
 
+IDENTITY = GoogleIdentity(
+    subject="google-subject-1",
+    email="person@example.com",
+    email_verified=True,
+    name="Person",
+)
+
 
 def _token(subject: str) -> str:
     return security.create_access_token(subject, expires_delta=timedelta(minutes=5))
+
+
+def _rs256_token() -> str:
+    """A token whose header says RS256, which is enough to route it to Google."""
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode())
+    return header.rstrip(b"=").decode() + ".e30.c2ln"
 
 
 def test_malformed_token_is_authentication_failed() -> None:
@@ -56,3 +73,44 @@ def test_inactive_actor_propagates(monkeypatch: Any) -> None:
         get_current_user(conn=CONN, token=_token(str(make_user().id)))
 
     assert exc.value.code is ErrorCode.INACTIVE_USER
+
+
+def test_rs256_token_is_routed_to_google(monkeypatch: Any) -> None:
+    user = make_user(google_sub=IDENTITY.subject)
+    captured: dict[str, Any] = {}
+
+    def fake_verify(token: str) -> GoogleIdentity:
+        return IDENTITY
+
+    def fake_login(*, conn: Any, identity: GoogleIdentity) -> User:
+        captured["identity"] = identity
+        return user
+
+    monkeypatch.setattr("app.api.deps.verify_google_id_token", fake_verify)
+    monkeypatch.setattr("app.api.deps.user_service.login_with_google", fake_login)
+
+    assert get_current_user(conn=CONN, token=_rs256_token()) == user
+    assert captured["identity"] is IDENTITY
+
+
+def test_invalid_google_token_is_authentication_failed(monkeypatch: Any) -> None:
+    def fake_verify(token: str) -> GoogleIdentity:
+        raise AuthenticationFailed(ErrorCode.INVALID_TOKEN)
+
+    monkeypatch.setattr("app.api.deps.verify_google_id_token", fake_verify)
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        get_current_user(conn=CONN, token=_rs256_token())
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN
+
+
+def test_password_tokens_are_rejected_when_password_login_is_off(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", False)
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        get_current_user(conn=CONN, token=_token(str(make_user().id)))
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN

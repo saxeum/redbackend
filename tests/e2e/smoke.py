@@ -101,6 +101,12 @@ def main() -> int:
         return "token issued"
 
     check("health check", lambda: call("GET", "/utils/health-check/"))
+    check(
+        "google sign-in rejects an invalid token -> 401",
+        lambda: call(
+            "POST", "/auth/google", body={"id_token": "not-a-token"}, expect=401
+        ),
+    )
     check("superuser login", super_token)
     check(
         "superuser is flagged",
