@@ -9,4 +9,3 @@ htmlcov
 .cache
 .venv
 .env
-openapi.json

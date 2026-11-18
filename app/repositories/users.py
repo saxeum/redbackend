@@ -4,9 +4,11 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Final
 
+from psycopg.errors import UniqueViolation
 from psycopg.rows import DictRow
 
 from app.core.db import DBConnection
+from app.domain.errors import Conflict, ErrorCode
 from app.domain.models import User
 from app.repositories.common import update_row
 
@@ -42,20 +44,24 @@ def get_by_email(*, conn: DBConnection, email: str) -> User | None:
 
 
 def insert(*, conn: DBConnection, user: User) -> User:
-    row = conn.execute(
-        f'INSERT INTO "user" ({COLUMNS})'
-        " VALUES (%s, %s, %s, %s, %s, %s, %s)"
-        f" RETURNING {COLUMNS}",
-        (
-            user.id,
-            user.email,
-            user.full_name,
-            user.is_active,
-            user.is_superuser,
-            user.hashed_password,
-            user.created_at,
-        ),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            f'INSERT INTO "user" ({COLUMNS})'
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            f" RETURNING {COLUMNS}",
+            (
+                user.id,
+                user.email,
+                user.full_name,
+                user.is_active,
+                user.is_superuser,
+                user.hashed_password,
+                user.created_at,
+            ),
+        ).fetchone()
+    except UniqueViolation as exc:
+        # The service pre-checks, but a concurrent request can still win the race.
+        raise Conflict(ErrorCode.EMAIL_TAKEN_ON_CREATE) from exc
     assert row is not None
     return _to_user(row)
 

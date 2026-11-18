@@ -88,6 +88,12 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class ErrorResponse(BaseModel):
+    """Shape of every domain error returned by the API."""
+
+    detail: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

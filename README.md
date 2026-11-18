@@ -50,9 +50,20 @@ Intermediate states are available if you want them: `make setup`, `make deps-up`
 
 ## Tests
 
+Testing is layered to match the code: each layer mocks the one below it.
+
+| Layer | Tests | Dependencies |
+|---|---|---|
+| Controllers (`app/api`) | `tests/api/test_controllers_*`, `test_deps.py` | services mocked (`monkeypatch` + `app.dependency_overrides`) |
+| Services (`app/services`) | `tests/services/` | repositories mocked (`tests/fakes.py`) |
+| Repositories (`app/repositories`) | `tests/repositories/` | **real PostgreSQL — not mocked** |
+| Contract | `test_mappers.py`, `test_error_mapping.py`, `test_openapi.py` | none |
+| Architecture | `test_layering.py` | none (AST) |
+| End-to-end | `tests/e2e/smoke.py` | running stack (`make e2e`) |
+
 ```bash
 make test                 # pytest + coverage, wipes users/items in the dev DB
-make test-pytest ARGS='tests/api -k login -x'
+make test-pytest ARGS='tests/services -k password -x'
 make test-ci              # same suite, assumes PostgreSQL is already running
 make e2e                  # HTTP smoke checks against a running stack
 ```
@@ -114,12 +125,19 @@ app/repositories/  SQL and row <-> domain mapping
   (`to_create_user`, `to_user_response`, ...). Renaming a field in one layer is
   a deliberate mapper change, never a silent contract change.
 - **`app/services/`** — the only place business rules live: email uniqueness,
-  superuser checks, ownership, password policy. They raise domain errors
-  (`NotFound`, `PermissionDenied`, `Conflict`, `InvalidCredentials`, ...).
+  superuser checks, ownership, password policy. They raise domain errors that
+  carry an `ErrorCode` (`NOT_FOUND`, `CONFLICT`, `INVALID_CREDENTIALS`, ...),
+  never prose or HTTP statuses.
 - **`app/repositories/`** — SQL only, returning domain objects. No FastAPI, no
-  business rules, no request models.
-- **`app/api/errors.py`** — maps each domain error to one HTTP status, so routes
-  never raise `HTTPException` for business conditions.
+  business rules, no request models. Driver failures are translated here
+  (`UniqueViolation` becomes a domain `Conflict`).
+- **`app/api/messages.py`** — the controller's strings table: one
+  `(status_code, message)` per `ErrorCode`. Wording and statuses are
+  presentation decisions and live only here.
+- **`app/api/errors.py`** — registers one handler for `DomainError`, so a raised
+  code is looked up in the table and decorated as `{"detail": …}`. Routes can
+  call `error_response()` to override a status for one endpoint. Infrastructure
+  failures (`OperationalError`, `PoolTimeout`) map to 503.
 
 Services take an already-open connection and commit when the use case completes
 (before the response is sent), so a concurrent request never observes
@@ -129,15 +147,38 @@ or a CLI use case as-is.
 
 ## OpenAPI for the frontend
 
-The frontend is the only consumer of this repository, and only through the
-OpenAPI schema:
+The frontend consumes this repository only through `openapi.json`, which is
+**committed** so schema changes are reviewable and builds stay hermetic.
 
 ```bash
-make openapi     # writes openapi.json
+make openapi        # regenerate openapi.json from the app
+make openapi-check  # fail if the committed file is stale (runs in CI)
 ```
 
-Alternatively the frontend can fetch `http://localhost:8000/api/v1/openapi.json`
-from a running server. Nothing else is shared between the two repositories.
+The artifact is generated with `ENABLE_PRIVATE_ROUTER=false`, so the
+development-only `/private/users/` route never leaks into the contract. Both
+commands import the app — no running server is needed.
+
+Error responses are generated from `app/api/messages.py`, so every documented
+status matches the controller's strings table:
+
+```json
+"404": {"description": "Item not found",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+```
+
+For deploy verification, compare a running environment against the artifact
+rather than generating from it:
+
+```bash
+curl -fsS "$API_URL/api/v1/openapi.json" -o /tmp/live.json
+jq -S . /tmp/live.json > /tmp/live.sorted && jq -S . openapi.json > /tmp/artifact.sorted
+diff /tmp/live.sorted /tmp/artifact.sorted
+```
+
+Against a development environment the only expected delta is
+`/api/v1/private/users/`, which is mounted only when `ENABLE_PRIVATE_ROUTER=true`.
+A production environment should match the artifact exactly.
 
 ## Docker
 

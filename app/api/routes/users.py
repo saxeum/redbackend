@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter
 
 from app.api.deps import ConnDep, CurrentUser
+from app.api.errors import api_responses
 from app.api.mappers import (
     to_create_user,
     to_me_update,
@@ -21,12 +22,17 @@ from app.api.schemas import (
     UserResponse,
     UserUpdateRequest,
 )
+from app.domain.errors import ErrorCode
 from app.services import users as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/", response_model=UserListResponse)
+@router.get(
+    "/",
+    response_model=UserListResponse,
+    responses=api_responses(ErrorCode.INSUFFICIENT_PRIVILEGES),
+)
 def read_users(
     conn: ConnDep, actor: CurrentUser, skip: int = 0, limit: int = 100
 ) -> UserListResponse:
@@ -37,7 +43,13 @@ def read_users(
     return to_user_list_response(users, count)
 
 
-@router.post("/", response_model=UserResponse)
+@router.post(
+    "/",
+    response_model=UserResponse,
+    responses=api_responses(
+        ErrorCode.INSUFFICIENT_PRIVILEGES, ErrorCode.EMAIL_TAKEN_ON_CREATE
+    ),
+)
 def create_user(
     payload: UserCreateRequest, conn: ConnDep, actor: CurrentUser
 ) -> UserResponse:
@@ -46,7 +58,11 @@ def create_user(
     return to_user_response(user)
 
 
-@router.patch("/me", response_model=UserResponse)
+@router.patch(
+    "/me",
+    response_model=UserResponse,
+    responses=api_responses(ErrorCode.EMAIL_TAKEN),
+)
 def update_user_me(
     payload: MeUpdateRequest, conn: ConnDep, actor: CurrentUser
 ) -> UserResponse:
@@ -55,7 +71,11 @@ def update_user_me(
     return to_user_response(user)
 
 
-@router.patch("/me/password", response_model=MessageResponse)
+@router.patch(
+    "/me/password",
+    response_model=MessageResponse,
+    responses=api_responses(ErrorCode.INCORRECT_PASSWORD, ErrorCode.PASSWORD_UNCHANGED),
+)
 def update_password_me(
     payload: PasswordChangeRequest, conn: ConnDep, actor: CurrentUser
 ) -> MessageResponse:
@@ -69,27 +89,41 @@ def update_password_me(
     return MessageResponse(message="Password updated successfully")
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, responses=api_responses())
 def read_user_me(actor: CurrentUser) -> UserResponse:
     """Get current user."""
     return to_user_response(actor)
 
 
-@router.delete("/me", response_model=MessageResponse)
+@router.delete(
+    "/me",
+    response_model=MessageResponse,
+    responses=api_responses(ErrorCode.SELF_DELETE_FORBIDDEN),
+)
 def delete_user_me(conn: ConnDep, actor: CurrentUser) -> MessageResponse:
     """Delete own user."""
     user_service.delete_me(conn=conn, actor=actor)
     return MessageResponse(message="User deleted successfully")
 
 
-@router.post("/signup", response_model=UserResponse)
+@router.post(
+    "/signup",
+    response_model=UserResponse,
+    responses=api_responses(ErrorCode.EMAIL_TAKEN_ON_CREATE, auth=False),
+)
 def register_user(payload: SignupRequest, conn: ConnDep) -> UserResponse:
     """Create a new user without being logged in."""
     user = user_service.signup(conn=conn, cmd=to_signup(payload))
     return to_user_response(user)
 
 
-@router.get("/{user_id}", response_model=UserResponse)
+@router.get(
+    "/{user_id}",
+    response_model=UserResponse,
+    responses=api_responses(
+        ErrorCode.INSUFFICIENT_PRIVILEGES, ErrorCode.USER_NOT_FOUND
+    ),
+)
 def read_user_by_id(
     user_id: uuid.UUID, conn: ConnDep, actor: CurrentUser
 ) -> UserResponse:
@@ -99,7 +133,15 @@ def read_user_by_id(
     )
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponse,
+    responses=api_responses(
+        ErrorCode.INSUFFICIENT_PRIVILEGES,
+        ErrorCode.USER_NOT_FOUND_FOR_UPDATE,
+        ErrorCode.EMAIL_TAKEN,
+    ),
+)
 def update_user(
     *,
     user_id: uuid.UUID,
@@ -114,7 +156,15 @@ def update_user(
     return to_user_response(user)
 
 
-@router.delete("/{user_id}", response_model=MessageResponse)
+@router.delete(
+    "/{user_id}",
+    response_model=MessageResponse,
+    responses=api_responses(
+        ErrorCode.INSUFFICIENT_PRIVILEGES,
+        ErrorCode.USER_NOT_FOUND,
+        ErrorCode.SELF_DELETE_FORBIDDEN,
+    ),
+)
 def delete_user(
     user_id: uuid.UUID, conn: ConnDep, actor: CurrentUser
 ) -> MessageResponse:

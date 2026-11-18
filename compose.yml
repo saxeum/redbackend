@@ -24,6 +24,7 @@ services:
         restart: true
     environment:
       FASTAPI_ENV: development
+      ENABLE_PRIVATE_ROUTER: "true"
       PROJECT_NAME: ${PROJECT_NAME:?Variable not set}
       SECRET_KEY: ${SECRET_KEY:?Variable not set}
       FIRST_SUPERUSER: ${FIRST_SUPERUSER:?Variable not set}

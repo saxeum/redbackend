@@ -119,10 +119,19 @@ test-pytest: deps-up ## Run pytest subsets (WIPES data; e.g. ARGS="tests/api -k 
 
 ##@ OpenAPI
 
-openapi: ## Export openapi.json for the frontend repository
-	$(UV) run python -c 'import app.main, json; print(json.dumps(app.main.app.openapi()))' > openapi.json
-	@echo 'Wrote redbackend/openapi.json'
-	@echo 'Frontend: copy it there or use OPENAPI_URL=$(API_URL)/api/v1/openapi.json'
+# The dev-only private router is forced off so the artifact does not depend on
+# who generated it (local .env has ENABLE_PRIVATE_ROUTER=true).
+# Values that affect the document are pinned so the artifact does not depend on
+# the environment that generated it (PROJECT_NAME becomes info.title).
+OPENAPI_DUMP := PROJECT_NAME="Red Backend" ENABLE_PRIVATE_ROUTER=false $(UV) run python -c 'import json; import app.main; print(json.dumps(app.main.app.openapi(), indent=2, sort_keys=True))'
+
+openapi: ## Regenerate the committed openapi.json
+	@$(OPENAPI_DUMP) > openapi.json
+	@echo 'Wrote openapi.json'
+
+openapi-check: ## Fail if the committed openapi.json is out of date
+	@$(OPENAPI_DUMP) > /tmp/openapi.generated.json
+	@diff -u openapi.json /tmp/openapi.generated.json && echo 'openapi.json is up to date' || { echo 'openapi.json is stale: run make openapi'; exit 1; }
 
 ##@ Docker
 
@@ -145,7 +154,7 @@ docker-down: ## Stop the stack (keeps the database volume)
 
 clean: ## Remove caches and generated reports
 	@find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +
-	@rm -rf htmlcov coverage .coverage openapi.json
+	@rm -rf htmlcov coverage .coverage
 	@echo 'Caches and generated reports removed.'
 
 .PHONY: help doctor urls env-check setup bootstrap \
@@ -153,5 +162,5 @@ clean: ## Remove caches and generated reports
 	deps-up deps-down deps-logs dev \
 	db-init db-migrate db-seed reseed db-shell db-reset \
 	lint format test test-ci test-pytest \
-	openapi docker-build docker-up docker-logs docker-shell docker-down \
+	openapi openapi-check docker-build docker-up docker-logs docker-shell docker-down \
 	clean

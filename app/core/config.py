@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     FRONTEND_HOST: str = "http://localhost:5173"
     FASTAPI_ENV: Literal["development"] | None = None
+    # Dev-only router (app/api/routes/private.py); kept out of the OpenAPI artifact.
+    ENABLE_PRIVATE_ROUTER: bool = False
 
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None

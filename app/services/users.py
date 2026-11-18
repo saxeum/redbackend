@@ -10,7 +10,7 @@ from app.core.security import get_password_hash, verify_password
 from app.domain.commands import CreateUser, UpdateUser
 from app.domain.errors import (
     Conflict,
-    EmailAlreadyRegistered,
+    ErrorCode,
     InactiveUser,
     InvalidCredentials,
     InvalidOperation,
@@ -24,12 +24,10 @@ from app.repositories import users as user_repo
 # This is an Argon2 hash of a random password, used to ensure constant-time comparison
 DUMMY_HASH = "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$YTU4NGM5ZTZmYjE2NzZlZjY0ZWY3ZGRkY2U2OWFjNjk"
 
-INSUFFICIENT_PRIVILEGES = "The user doesn't have enough privileges"
-
 
 def _require_superuser(actor: User) -> None:
     if not actor.is_superuser:
-        raise PermissionDenied(INSUFFICIENT_PRIVILEGES)
+        raise PermissionDenied(ErrorCode.INSUFFICIENT_PRIVILEGES)
 
 
 def _changes(cmd: UpdateUser) -> dict[str, Any]:
@@ -52,14 +50,12 @@ def _assert_email_available(
 ) -> None:
     existing = user_repo.get_by_email(conn=conn, email=email)
     if existing and existing.id != user_id:
-        raise Conflict("User with this email already exists")
+        raise Conflict(ErrorCode.EMAIL_TAKEN)
 
 
 def _insert(*, conn: DBConnection, cmd: CreateUser) -> User:
     if user_repo.get_by_email(conn=conn, email=cmd.email):
-        raise EmailAlreadyRegistered(
-            "The user with this email already exists in the system"
-        )
+        raise Conflict(ErrorCode.EMAIL_TAKEN_ON_CREATE)
     user = User(
         id=uuid.uuid4(),
         email=cmd.email,
@@ -100,12 +96,12 @@ def authenticate(*, conn: DBConnection, email: str, password: str) -> User:
     if not user:
         # Prove the same amount of work whether or not the email exists.
         verify_password(password, DUMMY_HASH)
-        raise InvalidCredentials("Incorrect email or password")
+        raise InvalidCredentials(ErrorCode.INVALID_CREDENTIALS)
     verified, updated_password_hash = verify_password(password, user.hashed_password)
     if not verified:
-        raise InvalidCredentials("Incorrect email or password")
+        raise InvalidCredentials(ErrorCode.INVALID_CREDENTIALS)
     if not user.is_active:
-        raise InactiveUser("Inactive user")
+        raise InactiveUser(ErrorCode.INACTIVE_USER)
     if updated_password_hash:
         updated = user_repo.update(
             conn=conn,
@@ -121,9 +117,9 @@ def get_active_user(*, conn: DBConnection, user_id: uuid.UUID) -> User:
     """Resolve a token subject to an active user (used by the auth dependency)."""
     user = user_repo.get_by_id(conn=conn, user_id=user_id)
     if not user:
-        raise NotFound("User not found")
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
     if not user.is_active:
-        raise InactiveUser("Inactive user")
+        raise InactiveUser(ErrorCode.INACTIVE_USER)
     return user
 
 
@@ -132,9 +128,9 @@ def get_user(*, conn: DBConnection, user_id: uuid.UUID, actor: User) -> User:
     if user and user.id == actor.id:
         return user
     if not actor.is_superuser:
-        raise PermissionDenied(INSUFFICIENT_PRIVILEGES)
+        raise PermissionDenied(ErrorCode.INSUFFICIENT_PRIVILEGES)
     if user is None:
-        raise NotFound("User not found")
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
     return user
 
 
@@ -150,12 +146,12 @@ def update_user(
 ) -> User:
     _require_superuser(actor)
     if not user_repo.get_by_id(conn=conn, user_id=user_id):
-        raise NotFound("The user with this id does not exist in the system")
+        raise NotFound(ErrorCode.USER_NOT_FOUND_FOR_UPDATE)
     if "email" in cmd.fields_set and cmd.email is not None:
         _assert_email_available(conn=conn, email=cmd.email, user_id=user_id)
     updated = user_repo.update(conn=conn, user_id=user_id, changes=_changes(cmd))
     if updated is None:
-        raise NotFound("The user with this id does not exist in the system")
+        raise NotFound(ErrorCode.USER_NOT_FOUND_FOR_UPDATE)
     commit(conn)
     return updated
 
@@ -165,7 +161,7 @@ def update_me(*, conn: DBConnection, actor: User, cmd: UpdateUser) -> User:
         _assert_email_available(conn=conn, email=cmd.email, user_id=actor.id)
     updated = user_repo.update(conn=conn, user_id=actor.id, changes=_changes(cmd))
     if updated is None:
-        raise NotFound("User not found")
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
     commit(conn)
     return updated
 
@@ -175,16 +171,16 @@ def change_password(
 ) -> None:
     verified, _ = verify_password(current_password, actor.hashed_password)
     if not verified:
-        raise InvalidCredentials("Incorrect password")
+        raise InvalidCredentials(ErrorCode.INCORRECT_PASSWORD)
     if current_password == new_password:
-        raise InvalidOperation("New password cannot be the same as the current one")
+        raise InvalidOperation(ErrorCode.PASSWORD_UNCHANGED)
     updated = user_repo.update(
         conn=conn,
         user_id=actor.id,
         changes={"hashed_password": get_password_hash(new_password)},
     )
     if updated is None:
-        raise NotFound("User not found")
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
     commit(conn)
 
 
@@ -192,15 +188,15 @@ def delete_user(*, conn: DBConnection, user_id: uuid.UUID, actor: User) -> None:
     _require_superuser(actor)
     user = user_repo.get_by_id(conn=conn, user_id=user_id)
     if not user:
-        raise NotFound("User not found")
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
     if user.id == actor.id:
-        raise PermissionDenied("Super users are not allowed to delete themselves")
+        raise PermissionDenied(ErrorCode.SELF_DELETE_FORBIDDEN)
     user_repo.delete(conn=conn, user_id=user_id)
     commit(conn)
 
 
 def delete_me(*, conn: DBConnection, actor: User) -> None:
     if actor.is_superuser:
-        raise PermissionDenied("Super users are not allowed to delete themselves")
+        raise PermissionDenied(ErrorCode.SELF_DELETE_FORBIDDEN)
     user_repo.delete(conn=conn, user_id=actor.id)
     commit(conn)

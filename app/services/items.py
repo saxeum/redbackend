@@ -6,7 +6,7 @@ from typing import Any
 
 from app.core.db import DBConnection, commit
 from app.domain.commands import CreateItem, UpdateItem
-from app.domain.errors import NotFound, PermissionDenied
+from app.domain.errors import ErrorCode, NotFound, PermissionDenied
 from app.domain.models import Item, User
 from app.repositories import items as item_repo
 
@@ -14,9 +14,9 @@ from app.repositories import items as item_repo
 def _load_for_actor(*, conn: DBConnection, item_id: uuid.UUID, actor: User) -> Item:
     item = item_repo.get_by_id(conn=conn, item_id=item_id)
     if not item:
-        raise NotFound("Item not found")
+        raise NotFound(ErrorCode.ITEM_NOT_FOUND)
     if not actor.is_superuser and item.owner_id != actor.id:
-        raise PermissionDenied("Not enough permissions")
+        raise PermissionDenied(ErrorCode.ITEM_PERMISSION_DENIED)
     return item
 
 
@@ -55,7 +55,7 @@ def update_item(
         changes["description"] = cmd.description
     updated = item_repo.update(conn=conn, item_id=item_id, changes=changes)
     if updated is None:
-        raise NotFound("Item not found")
+        raise NotFound(ErrorCode.ITEM_NOT_FOUND)
     commit(conn)
     return updated
 
