@@ -2,7 +2,17 @@
 
 import json
 
-from app.api.errors import UNAVAILABLE_ERRORS, error_response
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from psycopg import OperationalError
+from psycopg_pool import PoolTimeout
+
+from app.api.errors import (
+    UNAVAILABLE_ERRORS,
+    error_response,
+    register_exception_handlers,
+)
 from app.api.messages import MESSAGES
 from app.domain.errors import Conflict, DomainError, ErrorCode
 from app.main import app
@@ -37,3 +47,22 @@ def test_domain_error_handler_is_registered() -> None:
     assert DomainError in app.exception_handlers
     for unavailable in UNAVAILABLE_ERRORS:
         assert unavailable in app.exception_handlers
+
+
+@pytest.mark.parametrize(
+    "unavailable",
+    [OperationalError("database is down"), PoolTimeout("pool exhausted")],
+    ids=["operational-error", "pool-timeout"],
+)
+def test_unavailable_errors_return_503(unavailable: Exception) -> None:
+    test_app = FastAPI()
+    register_exception_handlers(test_app)
+
+    @test_app.get("/boom")
+    def boom() -> None:
+        raise unavailable
+
+    response = TestClient(test_app).get("/boom")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Service temporarily unavailable"}
