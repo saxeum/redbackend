@@ -135,6 +135,47 @@ whether to offer "change password" — accounts created through Google have none
 Public self-registration follows the password flag, since it only exists to
 create password accounts.
 
+## Mailbox
+
+One admin mailbox is polled out of band and stored locally. Phase 1 is
+read-only: messages are fetched, parsed into domain objects and persisted; the
+mailbox itself is never modified (no labels, no replies yet).
+
+| Call | Who | Purpose |
+|---|---|---|
+| `POST /api/v1/mail/poll?limit=10` | superuser | run one polling cycle, return counts and the new cursor |
+| `GET /api/v1/mail/messages` | superuser | list stored mail, newest first |
+| `GET /api/v1/mail/messages/{id}` | superuser | one message, including its body |
+
+```bash
+make mail-poll            # one cycle from the CLI (same service function)
+```
+
+Scheduled polling belongs in a worker process running `python -m app.poller`,
+never in a request path: a Gmail round-trip can outlast a request timeout.
+
+Configuration uses a **separate OAuth client** from sign-in, because the polled
+mailbox belongs to an admin account rather than to signing-in users:
+
+```bash
+make google-refresh-token     # consent once, prints GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN
+```
+
+`GMAIL_REFRESH_TOKEN` is a credential: keep it in `.env` (never in the repo or
+in `.env.example`). Unset configuration answers `404` rather than failing at
+request time, so unconfigured deployments behave as if the feature is absent.
+
+Polling is **incremental**. `mailbox_cursor` stores the provider's position
+token (Gmail's `historyId`) per mailbox, and each cycle asks for the delta since
+that cursor — so a burst of mail between cycles is neither missed nor re-read.
+The cursor and the messages it covers are written in one transaction, and a
+cursor older than Gmail's retained history window triggers an automatic full
+resync. `mail_message`'s unique `(mailbox, remote_id)` index still absorbs any
+overlap, because delivery is at-least-once in the general case.
+
+Full walkthrough, from creating the Google Cloud project to verifying the rows:
+[`docs/gmail-polling.md`](docs/gmail-polling.md).
+
 ## Migrations
 
 Schema changes are plain SQL files in `migrations/`, applied in filename order

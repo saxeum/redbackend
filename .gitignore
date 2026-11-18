@@ -12,3 +12,4 @@ htmlcov
 
 # Local OAuth client JSON contains a client secret; never commit it.
 google-oauth.json
+credentials.json

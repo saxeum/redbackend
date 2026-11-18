@@ -117,6 +117,18 @@ test-ci: ## Run tests against an already-running DB (used by CI)
 test-pytest: deps-up ## Run pytest subsets (WIPES data; e.g. ARGS="tests/api -k login -x")
 	FASTAPI_ENV=development $(UV) run pytest $(ARGS)
 
+##@ Scripts
+
+# One-off helpers that never run inside the app. `uv run --with` keeps the
+# dependency out of the lockfile; the output contains a client secret and a
+# refresh token, so treat stdout as sensitive.
+google-refresh-token: ## Mint a Gmail refresh token (needs credentials.json)
+	@test -f credentials.json || { echo 'Missing credentials.json — download it from the Google Cloud console'; exit 1; }
+	$(UV) run --with google-auth-oauthlib python scripts/get_refresh_token.py
+
+mail-poll: ## Poll the configured mailbox once (needs GMAIL_* in .env)
+	$(UV) run python -m app.poller
+
 ##@ OpenAPI
 
 # The dev-only private router is forced off so the artifact does not depend on
@@ -161,6 +173,7 @@ clean: ## Remove caches and generated reports
 	up down teardown check e2e verify rebuild \
 	deps-up deps-down deps-logs dev \
 	db-init db-migrate db-seed reseed db-shell db-reset \
-	lint format test test-ci test-pytest \
+	\tlint format test test-ci test-pytest \
+	google-refresh-token mail-poll \
 	openapi openapi-check docker-build docker-up docker-logs docker-shell docker-down \
 	clean

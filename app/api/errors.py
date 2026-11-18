@@ -17,6 +17,7 @@ from psycopg_pool import PoolTimeout
 
 from app.api.messages import MESSAGES
 from app.api.schemas import ErrorResponse
+from app.clients.gmail import MailAuthError
 from app.domain.errors import DomainError, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -57,9 +58,12 @@ def api_responses(
 
 # Infrastructure failures are not domain failures: they are availability
 # problems, so they map to 503 rather than pretending to be domain state.
+# MailAuthError is the mailbox dependency rejecting our credential — the same
+# kind of "not your fault, not your input" failure as an unreachable database.
 UNAVAILABLE_ERRORS: tuple[type[Exception], ...] = (
     psycopg.OperationalError,
     PoolTimeout,
+    MailAuthError,
 )
 
 

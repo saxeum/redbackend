@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Password grant stays available during the OIDC migration; turn it off in prod.
     ENABLE_PASSWORD_LOGIN: bool = True
 
+    # Mailbox polling. A separate OAuth client and refresh token: the polled
+    # mailbox belongs to an admin account, not to signing-in users.
+    GMAIL_CLIENT_ID: str | None = None
+    GMAIL_CLIENT_SECRET: str | None = None
+    GMAIL_REFRESH_TOKEN: str | None = None
+
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
     DATABASE_URL: PostgresDsn

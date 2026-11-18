@@ -22,6 +22,8 @@ class ErrorCode(StrEnum):
     INVALID_TOKEN = "invalid_token"
     EMAIL_NOT_ALLOWED = "email_not_allowed"
     PASSWORD_LOGIN_DISABLED = "password_login_disabled"
+    MAIL_NOT_CONFIGURED = "mail_not_configured"
+    MAIL_NOT_FOUND = "mail_not_found"
     GOOGLE_LOGIN_DISABLED = "google_login_disabled"
     INACTIVE_USER = "inactive_user"
     PASSWORD_UNCHANGED = "password_unchanged"

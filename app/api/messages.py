@@ -42,6 +42,8 @@ MESSAGES: dict[ErrorCode, MessageSpec] = {
         403, "This account is not allowed to sign in"
     ),
     ErrorCode.PASSWORD_LOGIN_DISABLED: MessageSpec(404, "Password login is disabled"),
+    ErrorCode.MAIL_NOT_CONFIGURED: MessageSpec(404, "Mail polling is not configured"),
+    ErrorCode.MAIL_NOT_FOUND: MessageSpec(404, "Mail message not found"),
     ErrorCode.GOOGLE_LOGIN_DISABLED: MessageSpec(404, "Google login is disabled"),
     ErrorCode.INACTIVE_USER: MessageSpec(400, "Inactive user"),
     ErrorCode.PASSWORD_UNCHANGED: MessageSpec(

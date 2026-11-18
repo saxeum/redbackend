@@ -256,6 +256,17 @@ def main() -> int:
         "superuser lists users",
         lambda: call("GET", "/users/", token=state["super"])["count"] >= 2,
     )
+
+    def mail_list() -> str:
+        body = call("GET", "/mail/messages", token=state["super"])
+        assert isinstance(body["count"], int), body
+        return f"count={body['count']}"
+
+    check("superuser lists stored mail", mail_list)
+    check(
+        "mail list is superuser-only -> 403",
+        lambda: call("GET", "/mail/messages", token=state["user"], expect=403),
+    )
     check(
         "superuser reads account",
         lambda: (
