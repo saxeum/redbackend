@@ -1,45 +1,35 @@
 [project]
 name = "app"
 version = "0.1.0"
-description = ""
+description = "FastAPI + Pydantic + PostgreSQL API server"
 requires-python = ">=3.14,<4.0"
 dependencies = [
+    "email-validator>=2.1.0.post1,<3.0.0",
     "fastapi[standard]>=0.141.1,<1.0.0",
-    "python-multipart<1.0.0,>=0.0.27",
-    "email-validator<3.0.0.0,>=2.1.0.post1",
-    "pydantic>=2.13.5",
-    "emails>=1.1.2,<2.0",
-    "jinja2<4.0.0,>=3.1.4",
-    "alembic>=1.19.1,<2.0.0",
-    "httpx<1.0.0,>=0.25.1",
-    "psycopg[binary]>=3.3.6,<4.0.0",
-    "sqlmodel>=0.0.46,<1.0.0",
-    "pydantic-settings<3.0.0,>=2.2.1",
-    "sentry-sdk[fastapi]>=2.70.0,<3.0.0",
+    "psycopg[binary,pool]>=3.3.6,<4.0.0",
+    "pydantic>=2.13.5,<3.0.0",
+    "pydantic-settings>=2.2.1,<3.0.0",
+    "pwdlib[argon2,bcrypt]>=0.3.1,<1.0.0",
     "pyjwt>=2.15.0,<3.0.0",
-    "pwdlib[argon2,bcrypt]>=0.3.1",
+    "python-multipart>=0.0.27,<1.0.0",
+    "sentry-sdk[fastapi]>=2.70.0,<3.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest<10.0.0,>=7.4.3",
-    "mypy<3.0.0,>=1.8.0",
-    "ty>=0.0.25",
-    "ruff<1.0.0,>=0.16.0",
-    "coverage<8.0.0,>=7.4.3",
+    "basedpyright>=1.31.0,<2.0.0",
+    "coverage>=7.4.3,<8.0.0",
+    "httpx>=0.25.1,<1.0.0",
+    "pytest>=7.4.3,<10.0.0",
+    "ruff>=0.16.0,<1.0.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.mypy]
-strict = true
-exclude = ["venv", ".venv", "alembic"]
-
 [tool.ruff]
 target-version = "py314"
-exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = [
@@ -50,19 +40,28 @@ select = [
     "B",  # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
-    "ARG001", # unused arguments in functions
-    "T201",   # print statements are not allowed
+    "ARG001",  # unused arguments in functions
+    "T201",  # print statements are not allowed
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "W191",  # indentation contains tabs
-    "B904",  # Allow raising exceptions without from e, for HTTPException
+    "E501",  # line length is the formatter's concern, not a lint error
+    "B008",  # FastAPI depends on calls in argument defaults (Depends, Query, ...)
+    "B904",  # allow raising HTTPException without `from`
 ]
 
-[tool.ruff.lint.pyupgrade]
-# Preserve types, even if a file imports `from __future__ import annotations`.
-keep-runtime-typing = true
+[tool.ruff.lint.per-file-ignores]
+# The migration runner is a CLI: printing progress is its interface.
+"migrations/run.py" = ["T201"]
+
+# Type checking. Kept deliberately identical for the CLI (uv run basedpyright)
+# and the basedpyright language server in Zed: both read this table.
+[tool.basedpyright]
+include = ["app", "tests", "migrations"]
+exclude = [".venv", "htmlcov", "**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
 
 [tool.coverage.run]
 source = ["app"]
@@ -74,9 +73,6 @@ sort = "-Cover"
 
 [tool.coverage.html]
 show_contexts = true
-
-[tool.ty.terminal]
-error-on-warning = true
 
 [tool.fastapi]
 entrypoint = "app.main:app"
