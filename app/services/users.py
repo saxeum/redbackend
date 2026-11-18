@@ -92,6 +92,9 @@ def create_user(*, conn: DBConnection, cmd: CreateUser, actor: User) -> User:
 
 def signup(*, conn: DBConnection, cmd: CreateUser) -> User:
     """Public self-registration: never grants privileges."""
+    # Self-registration exists to create password accounts, so it follows the
+    # password grant flag; Google sign-in provisions its own accounts.
+    require_password_login()
     return _insert(conn=conn, cmd=replace(cmd, is_superuser=False))
 
 

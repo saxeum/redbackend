@@ -123,6 +123,14 @@ frontend. Invalid, expired or wrongly-scoped tokens return `401` with a generic
 detail and a `WWW-Authenticate: Bearer` header; an account outside the
 allowlist returns `403`.
 
+**What the SPA reads.** `GET /api/v1/utils/config` returns
+`{"password_login": bool, "google_client_id": str | null}`, so one image can
+serve both modes: render the Google button when a client id is present and the
+password form while `password_login` is on. `UserResponse.has_password` tells
+the UI whether to offer "change password" — accounts created through Google
+have none. Public self-registration (`POST /users/signup`) follows the same
+flag, since it only exists to create password accounts.
+
 ## Migrations
 
 Schema changes are plain SQL files in `migrations/`, applied in filename order

@@ -60,6 +60,32 @@
         "title": "Body_login-login_access_token",
         "type": "object"
       },
+      "ConfigResponse": {
+        "description": "Public runtime settings the SPA reads before it renders a login form.",
+        "properties": {
+          "google_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Client Id"
+          },
+          "password_login": {
+            "title": "Password Login",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "password_login",
+          "google_client_id"
+        ],
+        "title": "ConfigResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "Shape of every domain error returned by the API.",
         "properties": {
@@ -425,6 +451,10 @@
             ],
             "title": "Full Name"
           },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -445,6 +475,7 @@
           "full_name",
           "is_active",
           "is_superuser",
+          "has_password",
           "created_at"
         ],
         "title": "UserResponse",
@@ -1656,6 +1687,16 @@
             },
             "description": "The user with this email already exists in the system"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Password login is disabled"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1963,6 +2004,38 @@
         "summary": "Update User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/utils/config": {
+      "get": {
+        "description": "Which sign-in methods this deployment offers (public, no secrets).",
+        "operationId": "utils-read_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "summary": "Read Config",
+        "tags": [
+          "utils"
         ]
       }
     },

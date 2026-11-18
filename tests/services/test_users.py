@@ -86,6 +86,21 @@ def test_signup_never_grants_superuser(monkeypatch: Any) -> None:
     assert repo.users[created.id].is_superuser is False
 
 
+def test_signup_is_disabled_with_the_password_grant(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", False)
+    repo, commits = install_user_repo(monkeypatch)
+
+    with pytest.raises(InvalidOperation) as exc:
+        user_service.signup(
+            conn=CONN,
+            cmd=CreateUser(email="new@example.com", password="password123"),
+        )
+
+    assert exc.value.code is ErrorCode.PASSWORD_LOGIN_DISABLED
+    assert repo.users == {}
+    assert commits == []
+
+
 def test_authenticate_success(monkeypatch: Any) -> None:
     user = make_user(
         email="person@example.com", hashed_password=get_password_hash("password123")

@@ -19,6 +19,7 @@ REQUIRED_PATHS = {
     f"{PREFIX}/users/{{user_id}}",
     f"{PREFIX}/items/",
     f"{PREFIX}/items/{{id}}",
+    f"{PREFIX}/utils/config",
     f"{PREFIX}/utils/health-check/",
 }
 

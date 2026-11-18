@@ -69,6 +69,8 @@ class UserResponse(BaseModel):
     full_name: str | None
     is_active: bool
     is_superuser: bool
+    # False for accounts created through Google: they have no local password.
+    has_password: bool
     created_at: datetime
 
 
@@ -103,3 +105,10 @@ class ErrorResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ConfigResponse(BaseModel):
+    """Public runtime settings the SPA reads before it renders a login form."""
+
+    password_login: bool
+    google_client_id: str | None
