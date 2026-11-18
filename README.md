@@ -50,7 +50,8 @@ make format    # ruff format
 ```
 
 `[tool.basedpyright]` sets `typeCheckingMode = "standard"`, resolves imports
-from `.venv`, and covers `app/` and `tests/`. CI runs the same `make lint`.
+from `.venv`, and covers `app/`, `tests/` and `migrations/`. CI runs the same
+`make lint`.
 
 ## Migrations
 
@@ -67,7 +68,40 @@ To change the schema, add `migrations/0002_<description>.sql`. Use
 `IF NOT EXISTS` / `IF EXISTS` where a statement should be re-runnable, and keep
 each file applied exactly once.
 
-`app/models.py` holds the Pydantic DTOs; `app/crud.py` holds the SQL.
+`app/api/schemas.py` holds the HTTP contract; `app/repositories/` holds the SQL.
+See **Architecture** below for how the layers fit together.
+
+## Architecture
+
+Four layers, each with one job. Dependencies point inward: routes know about
+services and schemas, services know about repositories and domain objects, and
+nothing in `app/domain/` imports FastAPI.
+
+```
+app/api/        adapters: request/response schemas, mappers, routes, error handlers
+app/services/   use cases: business rules, authorization, orchestration
+app/domain/     entities, commands and typed errors (no I/O knowledge)
+app/repositories/  SQL and row <-> domain mapping
+```
+
+- **`app/api/schemas.py`** — request and response models. Distinct from domain
+  objects; request models are never passed to services.
+- **`app/api/mappers.py`** — every conversion is explicit, in one place
+  (`to_create_user`, `to_user_response`, ...). Renaming a field in one layer is
+  a deliberate mapper change, never a silent contract change.
+- **`app/services/`** — the only place business rules live: email uniqueness,
+  superuser checks, ownership, password policy. They raise domain errors
+  (`NotFound`, `PermissionDenied`, `Conflict`, `InvalidCredentials`, ...).
+- **`app/repositories/`** — SQL only, returning domain objects. No FastAPI, no
+  business rules, no request models.
+- **`app/api/errors.py`** — maps each domain error to one HTTP status, so routes
+  never raise `HTTPException` for business conditions.
+
+Services take an already-open connection and commit when the use case completes
+(before the response is sent), so a concurrent request never observes
+uncommitted state; any raised error rolls the transaction back. Because services
+have no HTTP or framework dependencies, they can be called from scripts, workers,
+or a CLI use case as-is.
 
 ## OpenAPI for the frontend
 
@@ -101,10 +135,13 @@ make db-migrate
 ## Layout
 
 ```
-app/            FastAPI app, Pydantic DTOs, SQL in crud.py, routes
-migrations/     plain-SQL schema migrations + runner
-tests/          pytest suite
-compose.yml     PostgreSQL, backend
-Dockerfile      API-only image (no migrations)
-Makefile        every development task (setup, db, lint, test, docker)
+app/api/            FastAPI adapters: schemas, mappers, routes, errors, deps
+app/services/       use cases and business rules
+app/domain/         entities, commands, typed errors
+app/repositories/   SQL and row mapping
+migrations/         plain-SQL schema migrations + runner
+tests/              pytest suite (api, services, mappers)
+compose.yml         PostgreSQL, backend
+Dockerfile          API-only image (no migrations)
+Makefile            every development task (setup, db, lint, test, docker)
 ```

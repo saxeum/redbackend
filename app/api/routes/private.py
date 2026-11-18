@@ -1,11 +1,11 @@
-from typing import Any
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app import crud
 from app.api.deps import ConnDep
-from app.models import UserCreate, UserPublic
+from app.api.mappers import to_user_response
+from app.api.schemas import UserResponse
+from app.domain.commands import CreateUser
+from app.services import users as user_service
 
 router = APIRouter(tags=["private"], prefix="/private")
 
@@ -17,14 +17,15 @@ class PrivateUserCreate(BaseModel):
     is_verified: bool = False
 
 
-@router.post("/users/", response_model=UserPublic)
-def create_user(user_in: PrivateUserCreate, conn: ConnDep) -> Any:
-    """
-    Create a new user.
-    """
-    user_create = UserCreate(
-        email=user_in.email,
-        password=user_in.password,
-        full_name=user_in.full_name,
+@router.post("/users/", response_model=UserResponse)
+def create_user(user_in: PrivateUserCreate, conn: ConnDep) -> UserResponse:
+    """Create a new user (development-only router)."""
+    user = user_service.signup(
+        conn=conn,
+        cmd=CreateUser(
+            email=user_in.email,
+            password=user_in.password,
+            full_name=user_in.full_name,
+        ),
     )
-    return crud.create_user(conn=conn, user_create=user_create)
+    return to_user_response(user)

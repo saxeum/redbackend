@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 from pwdlib.hashers.bcrypt import BcryptHasher
 
-from app import crud
 from app.core.config import settings
 from app.core.db import DBConnection
 from app.core.security import get_password_hash, verify_password
+from app.repositories import users as user_repo
 from tests.utils.user import create_user_with_hashed_password
 from tests.utils.utils import random_email, random_lower_string
 
@@ -66,7 +66,7 @@ def test_login_with_bcrypt_password_upgrades_to_argon2(
     tokens = r.json()
     assert "access_token" in tokens
 
-    refreshed = crud.get_user_by_id(conn=db, user_id=user.id)
+    refreshed = user_repo.get_by_id(conn=db, user_id=user.id)
     assert refreshed
 
     # Verify the hash was upgraded to argon2
@@ -100,7 +100,7 @@ def test_login_with_argon2_password_keeps_hash(
     tokens = r.json()
     assert "access_token" in tokens
 
-    refreshed = crud.get_user_by_id(conn=db, user_id=user.id)
+    refreshed = user_repo.get_by_id(conn=db, user_id=user.id)
     assert refreshed
 
     assert refreshed.hashed_password == original_hash

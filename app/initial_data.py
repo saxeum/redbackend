@@ -1,9 +1,8 @@
 import logging
 
-from app import crud
 from app.core.config import settings
 from app.core.db import pool
-from app.models import UserCreate
+from app.services import users as user_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -11,16 +10,11 @@ logger = logging.getLogger(__name__)
 
 def init() -> None:
     with pool.connection() as conn:
-        user = crud.get_user_by_email(conn=conn, email=settings.FIRST_SUPERUSER)
-        if not user:
-            crud.create_user(
-                conn=conn,
-                user_create=UserCreate(
-                    email=settings.FIRST_SUPERUSER,
-                    password=settings.FIRST_SUPERUSER_PASSWORD,
-                    is_superuser=True,
-                ),
-            )
+        user_service.ensure_superuser(
+            conn=conn,
+            email=str(settings.FIRST_SUPERUSER),
+            password=settings.FIRST_SUPERUSER_PASSWORD,
+        )
 
 
 def main() -> None:

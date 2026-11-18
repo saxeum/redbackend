@@ -1,81 +1,69 @@
 import uuid
-from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from app import crud
 from app.api.deps import ConnDep, CurrentUser
-from app.models import ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
+from app.api.mappers import (
+    to_create_item,
+    to_item_list_response,
+    to_item_response,
+    to_update_item,
+)
+from app.api.schemas import (
+    ItemCreateRequest,
+    ItemListResponse,
+    ItemResponse,
+    ItemUpdateRequest,
+    MessageResponse,
+)
+from app.services import items as item_service
 
 router = APIRouter(prefix="/items", tags=["items"])
 
 
-@router.get("/", response_model=ItemsPublic)
+@router.get("/", response_model=ItemListResponse)
 def read_items(
-    conn: ConnDep, current_user: CurrentUser, skip: int = 0, limit: int = 100
-) -> Any:
-    """
-    Retrieve items.
-    """
-    owner_id = None if current_user.is_superuser else current_user.id
-    items, count = crud.list_items(conn=conn, owner_id=owner_id, skip=skip, limit=limit)
-    return ItemsPublic(data=items, count=count)
+    conn: ConnDep, actor: CurrentUser, skip: int = 0, limit: int = 100
+) -> ItemListResponse:
+    """Retrieve items visible to the caller."""
+    items, count = item_service.list_items(
+        conn=conn, actor=actor, skip=skip, limit=limit
+    )
+    return to_item_list_response(items, count)
 
 
-@router.get("/{id}", response_model=ItemPublic)
-def read_item(conn: ConnDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
-    """
-    Get item by ID.
-    """
-    item = crud.get_item(conn=conn, item_id=id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    return item
+@router.get("/{id}", response_model=ItemResponse)
+def read_item(id: uuid.UUID, conn: ConnDep, actor: CurrentUser) -> ItemResponse:
+    """Get an item by id."""
+    return to_item_response(item_service.get_item(conn=conn, item_id=id, actor=actor))
 
 
-@router.post("/", response_model=ItemPublic)
+@router.post("/", response_model=ItemResponse)
 def create_item(
-    *, conn: ConnDep, current_user: CurrentUser, item_in: ItemCreate
-) -> Any:
-    """
-    Create new item.
-    """
-    return crud.create_item(conn=conn, item_in=item_in, owner_id=current_user.id)
+    payload: ItemCreateRequest, conn: ConnDep, actor: CurrentUser
+) -> ItemResponse:
+    """Create a new item owned by the caller."""
+    item = item_service.create_item(conn=conn, cmd=to_create_item(payload), actor=actor)
+    return to_item_response(item)
 
 
-@router.put("/{id}", response_model=ItemPublic)
+@router.put("/{id}", response_model=ItemResponse)
 def update_item(
     *,
-    conn: ConnDep,
-    current_user: CurrentUser,
     id: uuid.UUID,
-    item_in: ItemUpdate,
-) -> Any:
-    """
-    Update an item.
-    """
-    item = crud.get_item(conn=conn, item_id=id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    updated = crud.update_item(conn=conn, item_id=id, item_in=item_in)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return updated
+    payload: ItemUpdateRequest,
+    conn: ConnDep,
+    actor: CurrentUser,
+) -> ItemResponse:
+    """Update an item the caller may access."""
+    item = item_service.update_item(
+        conn=conn, item_id=id, cmd=to_update_item(payload), actor=actor
+    )
+    return to_item_response(item)
 
 
-@router.delete("/{id}")
-def delete_item(conn: ConnDep, current_user: CurrentUser, id: uuid.UUID) -> Message:
-    """
-    Delete an item.
-    """
-    item = crud.get_item(conn=conn, item_id=id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not current_user.is_superuser and (item.owner_id != current_user.id):
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    crud.delete_item(conn=conn, item_id=id)
-    return Message(message="Item deleted successfully")
+@router.delete("/{id}", response_model=MessageResponse)
+def delete_item(id: uuid.UUID, conn: ConnDep, actor: CurrentUser) -> MessageResponse:
+    """Delete an item the caller may access."""
+    item_service.delete_item(conn=conn, item_id=id, actor=actor)
+    return MessageResponse(message="Item deleted successfully")

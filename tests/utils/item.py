@@ -1,13 +1,15 @@
-from app import crud
 from app.core.db import DBConnection
-from app.models import ItemCreate, ItemPublic
+from app.domain.commands import CreateItem
+from app.domain.models import Item
+from app.services import items as item_service
 from tests.utils.user import create_random_user
 from tests.utils.utils import random_lower_string
 
 
-def create_random_item(db: DBConnection) -> ItemPublic:
+def create_random_item(db: DBConnection) -> Item:
     user = create_random_user(db)
-    title = random_lower_string()
-    description = random_lower_string()
-    item_in = ItemCreate(title=title, description=description)
-    return crud.create_item(conn=db, item_in=item_in, owner_id=user.id)
+    return item_service.create_item(
+        conn=db,
+        cmd=CreateItem(title=random_lower_string(), description=random_lower_string()),
+        actor=user,
+    )

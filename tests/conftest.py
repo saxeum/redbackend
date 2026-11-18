@@ -6,11 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
-from app import crud
 from app.core.config import settings
 from app.core.db import DBConnection
 from app.main import app
-from app.models import UserCreate
+from app.repositories import users as user_repo
+from app.services import users as user_service
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import TEST_USER_EMAIL, get_superuser_token_headers
 
@@ -27,14 +27,11 @@ def db() -> Generator[DBConnection]:
         psycopg.connect(str(settings.DATABASE_URL), autocommit=True, **conn_options),
     )
     try:
-        if not crud.get_user_by_email(conn=conn, email=settings.FIRST_SUPERUSER):
-            crud.create_user(
+        if not user_repo.get_by_email(conn=conn, email=settings.FIRST_SUPERUSER):
+            user_service.ensure_superuser(
                 conn=conn,
-                user_create=UserCreate(
-                    email=settings.FIRST_SUPERUSER,
-                    password=settings.FIRST_SUPERUSER_PASSWORD,
-                    is_superuser=True,
-                ),
+                email=str(settings.FIRST_SUPERUSER),
+                password=settings.FIRST_SUPERUSER_PASSWORD,
             )
         yield conn
         conn.execute("DELETE FROM item")
