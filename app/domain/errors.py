@@ -54,7 +54,8 @@ class InactiveUser(DomainError):
 
 
 class AuthenticationFailed(DomainError):
-    """The bearer token is missing, malformed or not decodable."""
+    """The bearer token is missing, malformed, not decodable, or names a user
+    that no longer exists."""
 
 
 class InvalidOperation(DomainError):

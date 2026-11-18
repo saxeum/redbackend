@@ -2,12 +2,15 @@
 
 import base64
 import json
+import uuid
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_db
+from app.api.messages import MESSAGES
 from app.core import security
 from app.core.config import settings
 from app.core.google import GoogleIdentity
@@ -18,7 +21,10 @@ from app.domain.errors import (
     NotFound,
 )
 from app.domain.models import User
+from app.main import app
 from tests.fakes import CONN, make_user
+
+API = "/api/v1"
 
 IDENTITY = GoogleIdentity(
     subject="google-subject-1",
@@ -45,11 +51,46 @@ def test_malformed_token_is_authentication_failed() -> None:
     assert exc.value.code is ErrorCode.INVALID_TOKEN
 
 
-def test_non_uuid_subject_is_not_found() -> None:
-    with pytest.raises(NotFound) as exc:
+def test_non_uuid_subject_is_authentication_failed() -> None:
+    with pytest.raises(AuthenticationFailed) as exc:
         get_current_user(conn=CONN, token=_token("not-a-uuid"))
 
-    assert exc.value.code is ErrorCode.USER_NOT_FOUND
+    assert exc.value.code is ErrorCode.INVALID_TOKEN
+
+
+def test_missing_user_is_authentication_failed(monkeypatch: Any) -> None:
+    """A validly signed token for a deleted user is a credential failure."""
+
+    def fake_get_active(*, conn: Any, user_id: Any) -> User:
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
+
+    monkeypatch.setattr("app.api.deps.user_service.get_active_user", fake_get_active)
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        get_current_user(conn=CONN, token=_token(str(uuid.uuid4())))
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN
+
+
+def test_missing_user_token_is_401_over_http(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    """The contract a client sees: 401 with a bearer challenge, not 404."""
+
+    def fake_get_active(*, conn: Any, user_id: Any) -> User:
+        raise NotFound(ErrorCode.USER_NOT_FOUND)
+
+    monkeypatch.setattr("app.api.deps.user_service.get_active_user", fake_get_active)
+    app.dependency_overrides[get_db] = lambda: None
+    token = _token(str(uuid.uuid4()))
+
+    response = client.get(
+        f"{API}/users/me", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.json()["detail"] == MESSAGES[ErrorCode.INVALID_TOKEN].message
 
 
 def test_valid_token_returns_the_actor(monkeypatch: Any) -> None:

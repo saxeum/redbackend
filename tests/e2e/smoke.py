@@ -382,6 +382,13 @@ def main() -> int:
         "delete own account",
         lambda: call("DELETE", "/users/me", token=state["user"])["message"],
     )
+
+    def deleted_token_is_401() -> str:
+        status, payload = request("GET", "/users/me", token=state["user"])
+        assert status == 401, f"expected 401, got {status}: {payload!r}"
+        return str((payload or {}).get("detail"))
+
+    check("deleted account's token -> 401", deleted_token_is_401)
     check(
         "deleted account cannot log in -> 400",
         lambda: call(
