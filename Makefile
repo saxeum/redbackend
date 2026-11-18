@@ -121,7 +121,9 @@ test-pytest: deps-up ## Run pytest subsets (WIPES data; e.g. ARGS="tests/api -k 
 
 # The dev-only private router is forced off so the artifact does not depend on
 # who generated it (local .env has ENABLE_PRIVATE_ROUTER=true).
-OPENAPI_DUMP := ENABLE_PRIVATE_ROUTER=false $(UV) run python -c 'import json; import app.main; print(json.dumps(app.main.app.openapi(), indent=2, sort_keys=True))'
+# Values that affect the document are pinned so the artifact does not depend on
+# the environment that generated it (PROJECT_NAME becomes info.title).
+OPENAPI_DUMP := PROJECT_NAME="Red Backend" ENABLE_PRIVATE_ROUTER=false $(UV) run python -c 'import json; import app.main; print(json.dumps(app.main.app.openapi(), indent=2, sort_keys=True))'
 
 openapi: ## Regenerate the committed openapi.json
 	@$(OPENAPI_DUMP) > openapi.json
