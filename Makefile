@@ -41,6 +41,26 @@ bootstrap: env-check setup db-init ## One-shot: deps, DB, migrations, superuser
 	@echo
 	@echo 'Ready. Run: make dev'
 
+##@ Lifecycle
+
+up: env-check setup db-init docker-up ## Bring everything up: deps, DB, image, stack
+
+down: docker-down ## Stop the stack (keeps the database volume)
+
+teardown: ## DESTRUCTIVE: remove containers, volumes, images, venv, caches
+	$(COMPOSE) down -v --rmi all --remove-orphans
+	rm -rf .venv
+	$(MAKE) clean
+
+check: lint test-ci ## Static checks and the test suite
+
+e2e: ## HTTP smoke test against a running stack
+	$(UV) run python -m tests.e2e.smoke
+
+verify: check reseed e2e ## Lint, tests, reseed, HTTP smoke
+
+rebuild: teardown up verify ## Full cycle from zero: teardown, up, verify
+
 ##@ Development
 
 deps-up: ## Start PostgreSQL
@@ -63,6 +83,9 @@ db-migrate: ## Apply pending SQL migrations
 	$(UV) run python -m migrations.run
 
 db-seed: db-migrate ## Create the first superuser if missing
+	$(UV) run python app/initial_data.py
+
+reseed: ## Recreate the first superuser (the test session wipes the database)
 	$(UV) run python app/initial_data.py
 
 db-shell: ## Open a psql shell in the database container
@@ -106,8 +129,8 @@ openapi: ## Export openapi.json for the frontend repository
 docker-build: ## Build the backend image
 	$(COMPOSE) build
 
-docker-up: ## Start the backend stack detached
-	$(COMPOSE) up -d --wait
+docker-up: ## Start the backend stack detached (builds the image if needed)
+	$(COMPOSE) up -d --wait --build
 
 docker-logs: ## Follow stack logs
 	$(COMPOSE) logs -f --tail=100
@@ -126,8 +149,9 @@ clean: ## Remove caches and generated reports
 	@echo 'Caches and generated reports removed.'
 
 .PHONY: help doctor urls env-check setup bootstrap \
+	up down teardown check e2e verify rebuild \
 	deps-up deps-down deps-logs dev \
-	db-init db-migrate db-seed db-shell db-reset \
+	db-init db-migrate db-seed reseed db-shell db-reset \
 	lint format test test-ci test-pytest \
 	openapi docker-build docker-up docker-logs docker-shell docker-down \
 	clean

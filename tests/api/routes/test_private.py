@@ -2,9 +2,9 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app import crud
 from app.core.config import settings
 from app.core.db import DBConnection
+from app.repositories import users as user_repo
 
 
 def test_create_user(client: TestClient, db: DBConnection) -> None:
@@ -21,7 +21,7 @@ def test_create_user(client: TestClient, db: DBConnection) -> None:
 
     data = r.json()
 
-    user = crud.get_user_by_id(conn=db, user_id=uuid.UUID(data["id"]))
+    user = user_repo.get_by_id(conn=db, user_id=uuid.UUID(data["id"]))
 
     assert user
     assert user.email == "user@example.com"

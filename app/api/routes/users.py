@@ -1,202 +1,123 @@
 import uuid
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter
 
-from app import crud
-from app.api.deps import (
-    ConnDep,
-    CurrentUser,
-    get_current_active_superuser,
+from app.api.deps import ConnDep, CurrentUser
+from app.api.mappers import (
+    to_create_user,
+    to_me_update,
+    to_signup,
+    to_update_user,
+    to_user_list_response,
+    to_user_response,
 )
-from app.core.security import verify_password
-from app.models import (
-    Message,
-    UpdatePassword,
-    UserCreate,
-    UserPublic,
-    UserRegister,
-    UsersPublic,
-    UserUpdate,
-    UserUpdateMe,
+from app.api.schemas import (
+    MessageResponse,
+    MeUpdateRequest,
+    PasswordChangeRequest,
+    SignupRequest,
+    UserCreateRequest,
+    UserListResponse,
+    UserResponse,
+    UserUpdateRequest,
 )
+from app.services import users as user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get(
-    "/",
-    dependencies=[Depends(get_current_active_superuser)],
-    response_model=UsersPublic,
-)
-def read_users(conn: ConnDep, skip: int = 0, limit: int = 100) -> Any:
-    """
-    Retrieve users.
-    """
-    users, count = crud.list_users(conn=conn, skip=skip, limit=limit)
-    users_public = [UserPublic.model_validate(user) for user in users]
-    return UsersPublic(data=users_public, count=count)
+@router.get("/", response_model=UserListResponse)
+def read_users(
+    conn: ConnDep, actor: CurrentUser, skip: int = 0, limit: int = 100
+) -> UserListResponse:
+    """Retrieve users (superuser only)."""
+    users, count = user_service.list_users(
+        conn=conn, actor=actor, skip=skip, limit=limit
+    )
+    return to_user_list_response(users, count)
 
 
-@router.post(
-    "/", dependencies=[Depends(get_current_active_superuser)], response_model=UserPublic
-)
-def create_user(*, conn: ConnDep, user_in: UserCreate) -> Any:
-    """
-    Create new user.
-    """
-    user = crud.get_user_by_email(conn=conn, email=user_in.email)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="The user with this email already exists in the system.",
-        )
-
-    return crud.create_user(conn=conn, user_create=user_in)
+@router.post("/", response_model=UserResponse)
+def create_user(
+    payload: UserCreateRequest, conn: ConnDep, actor: CurrentUser
+) -> UserResponse:
+    """Create a user (superuser only)."""
+    user = user_service.create_user(conn=conn, cmd=to_create_user(payload), actor=actor)
+    return to_user_response(user)
 
 
-@router.patch("/me", response_model=UserPublic)
+@router.patch("/me", response_model=UserResponse)
 def update_user_me(
-    *, conn: ConnDep, user_in: UserUpdateMe, current_user: CurrentUser
-) -> Any:
-    """
-    Update own user.
-    """
-
-    if user_in.email:
-        existing_user = crud.get_user_by_email(conn=conn, email=user_in.email)
-        if existing_user and existing_user.id != current_user.id:
-            raise HTTPException(
-                status_code=409, detail="User with this email already exists"
-            )
-    updated_user = crud.update_user(conn=conn, user_id=current_user.id, user_in=user_in)
-    return updated_user or current_user
+    payload: MeUpdateRequest, conn: ConnDep, actor: CurrentUser
+) -> UserResponse:
+    """Update own user."""
+    user = user_service.update_me(conn=conn, actor=actor, cmd=to_me_update(payload))
+    return to_user_response(user)
 
 
-@router.patch("/me/password", response_model=Message)
+@router.patch("/me/password", response_model=MessageResponse)
 def update_password_me(
-    *, conn: ConnDep, body: UpdatePassword, current_user: CurrentUser
-) -> Any:
-    """
-    Update own password.
-    """
-    verified, _ = verify_password(body.current_password, current_user.hashed_password)
-    if not verified:
-        raise HTTPException(status_code=400, detail="Incorrect password")
-    if body.current_password == body.new_password:
-        raise HTTPException(
-            status_code=400, detail="New password cannot be the same as the current one"
-        )
-    crud.set_user_password(
-        conn=conn, user_id=current_user.id, password=body.new_password
+    payload: PasswordChangeRequest, conn: ConnDep, actor: CurrentUser
+) -> MessageResponse:
+    """Update own password."""
+    user_service.change_password(
+        conn=conn,
+        actor=actor,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
     )
-    return Message(message="Password updated successfully")
+    return MessageResponse(message="Password updated successfully")
 
 
-@router.get("/me", response_model=UserPublic)
-def read_user_me(current_user: CurrentUser) -> Any:
-    """
-    Get current user.
-    """
-    return current_user
+@router.get("/me", response_model=UserResponse)
+def read_user_me(actor: CurrentUser) -> UserResponse:
+    """Get current user."""
+    return to_user_response(actor)
 
 
-@router.delete("/me", response_model=Message)
-def delete_user_me(conn: ConnDep, current_user: CurrentUser) -> Any:
-    """
-    Delete own user.
-    """
-    if current_user.is_superuser:
-        raise HTTPException(
-            status_code=403, detail="Super users are not allowed to delete themselves"
-        )
-    crud.delete_user(conn=conn, user_id=current_user.id)
-    return Message(message="User deleted successfully")
+@router.delete("/me", response_model=MessageResponse)
+def delete_user_me(conn: ConnDep, actor: CurrentUser) -> MessageResponse:
+    """Delete own user."""
+    user_service.delete_me(conn=conn, actor=actor)
+    return MessageResponse(message="User deleted successfully")
 
 
-@router.post("/signup", response_model=UserPublic)
-def register_user(conn: ConnDep, user_in: UserRegister) -> Any:
-    """
-    Create new user without the need to be logged in.
-    """
-    user = crud.get_user_by_email(conn=conn, email=user_in.email)
-    if user:
-        raise HTTPException(
-            status_code=400,
-            detail="The user with this email already exists in the system",
-        )
-    user_create = UserCreate(
-        email=user_in.email,
-        password=user_in.password,
-        full_name=user_in.full_name,
-    )
-    return crud.create_user(conn=conn, user_create=user_create)
+@router.post("/signup", response_model=UserResponse)
+def register_user(payload: SignupRequest, conn: ConnDep) -> UserResponse:
+    """Create a new user without being logged in."""
+    user = user_service.signup(conn=conn, cmd=to_signup(payload))
+    return to_user_response(user)
 
 
-@router.get("/{user_id}", response_model=UserPublic)
+@router.get("/{user_id}", response_model=UserResponse)
 def read_user_by_id(
-    user_id: uuid.UUID, conn: ConnDep, current_user: CurrentUser
-) -> Any:
-    """
-    Get a specific user by id.
-    """
-    user = crud.get_user_by_id(conn=conn, user_id=user_id)
-    if user and user.id == current_user.id:
-        return user
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=403,
-            detail="The user doesn't have enough privileges",
-        )
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    user_id: uuid.UUID, conn: ConnDep, actor: CurrentUser
+) -> UserResponse:
+    """Get a specific user by id."""
+    return to_user_response(
+        user_service.get_user(conn=conn, user_id=user_id, actor=actor)
+    )
 
 
-@router.patch(
-    "/{user_id}",
-    dependencies=[Depends(get_current_active_superuser)],
-    response_model=UserPublic,
-)
+@router.patch("/{user_id}", response_model=UserResponse)
 def update_user(
     *,
-    conn: ConnDep,
     user_id: uuid.UUID,
-    user_in: UserUpdate,
-) -> Any:
-    """
-    Update a user.
-    """
-
-    db_user = crud.get_user_by_id(conn=conn, user_id=user_id)
-    if not db_user:
-        raise HTTPException(
-            status_code=404,
-            detail="The user with this id does not exist in the system",
-        )
-    if user_in.email:
-        existing_user = crud.get_user_by_email(conn=conn, email=user_in.email)
-        if existing_user and existing_user.id != user_id:
-            raise HTTPException(
-                status_code=409, detail="User with this email already exists"
-            )
-
-    return crud.update_user(conn=conn, user_id=user_id, user_in=user_in)
+    payload: UserUpdateRequest,
+    conn: ConnDep,
+    actor: CurrentUser,
+) -> UserResponse:
+    """Update a user (superuser only)."""
+    user = user_service.update_user(
+        conn=conn, user_id=user_id, cmd=to_update_user(payload), actor=actor
+    )
+    return to_user_response(user)
 
 
-@router.delete("/{user_id}", dependencies=[Depends(get_current_active_superuser)])
+@router.delete("/{user_id}", response_model=MessageResponse)
 def delete_user(
-    conn: ConnDep, current_user: CurrentUser, user_id: uuid.UUID
-) -> Message:
-    """
-    Delete a user.
-    """
-    user = crud.get_user_by_id(conn=conn, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.id == current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Super users are not allowed to delete themselves"
-        )
-    crud.delete_user(conn=conn, user_id=user_id)
-    return Message(message="User deleted successfully")
+    user_id: uuid.UUID, conn: ConnDep, actor: CurrentUser
+) -> MessageResponse:
+    """Delete a user (superuser only)."""
+    user_service.delete_user(conn=conn, user_id=user_id, actor=actor)
+    return MessageResponse(message="User deleted successfully")

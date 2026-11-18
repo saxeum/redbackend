@@ -25,12 +25,36 @@ make dev                  # FastAPI on :8000
 
 `make doctor` checks the local tooling; `make help` lists every target.
 
+## Full lifecycle
+
+Every step is a Makefile target — no raw `docker` or `rm` commands needed.
+
+```bash
+make up          # deps + PostgreSQL + migrations + superuser + image + stack
+make check       # basedpyright + ruff + pytest
+make e2e         # HTTP smoke suite against the running stack
+make verify      # check + reseed + e2e
+make down        # stop the stack, keep the database volume
+make teardown    # DESTRUCTIVE: containers, volumes, images, .venv, caches
+make rebuild     # teardown + up + verify: the whole cycle from zero
+```
+
+`make rebuild` is the regression run. It removes every artifact (containers,
+images, volume, `.venv`, caches), rebuilds the virtualenv from `uv.lock`, applies
+migrations to an empty volume, seeds the superuser, builds the API image, then
+runs lint, the test suite, and the HTTP smoke checks. `make e2e` accepts
+`API_URL` to target another host (`API_URL=https://api.example.com make e2e`).
+
+Intermediate states are available if you want them: `make setup`, `make deps-up`,
+`make db-init`, `make docker-build`, `make docker-up`, `make db-reset`.
+
 ## Tests
 
 ```bash
 make test                 # pytest + coverage, wipes users/items in the dev DB
 make test-pytest ARGS='tests/api -k login -x'
 make test-ci              # same suite, assumes PostgreSQL is already running
+make e2e                  # HTTP smoke checks against a running stack
 ```
 
 Coverage HTML is written to `htmlcov/index.html`.
@@ -50,7 +74,8 @@ make format    # ruff format
 ```
 
 `[tool.basedpyright]` sets `typeCheckingMode = "standard"`, resolves imports
-from `.venv`, and covers `app/` and `tests/`. CI runs the same `make lint`.
+from `.venv`, and covers `app/`, `tests/` and `migrations/`. CI runs the same
+`make lint`.
 
 ## Migrations
 
@@ -67,7 +92,40 @@ To change the schema, add `migrations/0002_<description>.sql`. Use
 `IF NOT EXISTS` / `IF EXISTS` where a statement should be re-runnable, and keep
 each file applied exactly once.
 
-`app/models.py` holds the Pydantic DTOs; `app/crud.py` holds the SQL.
+`app/api/schemas.py` holds the HTTP contract; `app/repositories/` holds the SQL.
+See **Architecture** below for how the layers fit together.
+
+## Architecture
+
+Four layers, each with one job. Dependencies point inward: routes know about
+services and schemas, services know about repositories and domain objects, and
+nothing in `app/domain/` imports FastAPI.
+
+```
+app/api/        adapters: request/response schemas, mappers, routes, error handlers
+app/services/   use cases: business rules, authorization, orchestration
+app/domain/     entities, commands and typed errors (no I/O knowledge)
+app/repositories/  SQL and row <-> domain mapping
+```
+
+- **`app/api/schemas.py`** — request and response models. Distinct from domain
+  objects; request models are never passed to services.
+- **`app/api/mappers.py`** — every conversion is explicit, in one place
+  (`to_create_user`, `to_user_response`, ...). Renaming a field in one layer is
+  a deliberate mapper change, never a silent contract change.
+- **`app/services/`** — the only place business rules live: email uniqueness,
+  superuser checks, ownership, password policy. They raise domain errors
+  (`NotFound`, `PermissionDenied`, `Conflict`, `InvalidCredentials`, ...).
+- **`app/repositories/`** — SQL only, returning domain objects. No FastAPI, no
+  business rules, no request models.
+- **`app/api/errors.py`** — maps each domain error to one HTTP status, so routes
+  never raise `HTTPException` for business conditions.
+
+Services take an already-open connection and commit when the use case completes
+(before the response is sent), so a concurrent request never observes
+uncommitted state; any raised error rolls the transaction back. Because services
+have no HTTP or framework dependencies, they can be called from scripts, workers,
+or a CLI use case as-is.
 
 ## OpenAPI for the frontend
 
@@ -101,10 +159,13 @@ make db-migrate
 ## Layout
 
 ```
-app/            FastAPI app, Pydantic DTOs, SQL in crud.py, routes
-migrations/     plain-SQL schema migrations + runner
-tests/          pytest suite
-compose.yml     PostgreSQL, backend
-Dockerfile      API-only image (no migrations)
-Makefile        every development task (setup, db, lint, test, docker)
+app/api/            FastAPI adapters: schemas, mappers, routes, errors, deps
+app/services/       use cases and business rules
+app/domain/         entities, commands, typed errors
+app/repositories/   SQL and row mapping
+migrations/         plain-SQL schema migrations + runner
+tests/              pytest suite (api, services, mappers)
+compose.yml         PostgreSQL, backend
+Dockerfile          API-only image (no migrations)
+Makefile            every development task (setup, db, lint, test, docker)
 ```

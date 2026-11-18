@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 
+from app.api.errors import register_exception_handlers
 from app.api.main import api_router
 from app.core.config import settings
 
@@ -29,3 +30,5 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+register_exception_handlers(app)

@@ -1,0 +1,93 @@
+"""Presentation models: the HTTP contract.
+
+Deliberately distinct from the domain objects in app/domain and from the
+request/response shapes used elsewhere. Nothing here is imported by services
+or repositories.
+"""
+
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr, Field
+
+# --- request bodies -------------------------------------------------------
+
+
+class UserCreateRequest(BaseModel):
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=255)
+    is_superuser: bool = False
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=255)
+
+
+class UserUpdateRequest(BaseModel):
+    email: EmailStr | None = Field(default=None, max_length=255)
+    is_active: bool | None = None
+    is_superuser: bool | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class MeUpdateRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = Field(default=None, max_length=255)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ItemCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
+
+
+class ItemUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
+
+
+# --- response bodies ------------------------------------------------------
+
+
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    email: EmailStr
+    full_name: str | None
+    is_active: bool
+    is_superuser: bool
+    created_at: datetime
+
+
+class UserListResponse(BaseModel):
+    data: list[UserResponse]
+    count: int
+
+
+class ItemResponse(BaseModel):
+    id: uuid.UUID
+    title: str
+    description: str | None
+    owner_id: uuid.UUID
+    created_at: datetime
+
+
+class ItemListResponse(BaseModel):
+    data: list[ItemResponse]
+    count: int
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

@@ -21,3 +21,13 @@ pool = ConnectionPool(
 
 # Close cleanly so interpreter shutdown does not try to join pool threads.
 atexit.register(pool.close)
+
+
+def commit(conn: DBConnection) -> None:
+    """Commit a use case's unit of work.
+
+    FastAPI runs yield-dependency teardown after the response is sent, so
+    committing there would let a concurrent request on another worker read
+    pre-commit state. Services commit before they return instead.
+    """
+    conn.commit()

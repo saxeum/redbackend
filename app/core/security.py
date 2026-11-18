@@ -5,6 +5,7 @@ import jwt
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from pwdlib.hashers.bcrypt import BcryptHasher
+from pydantic import BaseModel
 
 from app.core.config import settings
 
@@ -17,6 +18,10 @@ password_hash = PasswordHash(
 
 
 ALGORITHM = "HS256"
+
+
+class TokenPayload(BaseModel):
+    sub: str | None = None
 
 
 def create_access_token(subject: str | Any, expires_delta: timedelta) -> str:
