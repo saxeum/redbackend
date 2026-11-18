@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     FRONTEND_HOST: str = "http://localhost:5173"
+    # Additional CORS origins for local aliases (127.0.0.1, [::1], ...).
+    FRONTEND_ORIGINS: str = ""
     FASTAPI_ENV: Literal["development"] | None = None
     # Dev-only router (app/api/routes/private.py); kept out of the OpenAPI artifact.
     ENABLE_PRIVATE_ROUTER: bool = False
@@ -50,6 +52,14 @@ class Settings(BaseSettings):
 
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
+
+    @property
+    def frontend_origins(self) -> list[str]:
+        origins = [self.FRONTEND_HOST]
+        origins.extend(
+            item.strip() for item in self.FRONTEND_ORIGINS.split(",") if item.strip()
+        )
+        return list(dict.fromkeys(origins))
 
     @property
     def allowed_emails(self) -> set[str]:
