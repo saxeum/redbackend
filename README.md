@@ -25,12 +25,36 @@ make dev                  # FastAPI on :8000
 
 `make doctor` checks the local tooling; `make help` lists every target.
 
+## Full lifecycle
+
+Every step is a Makefile target — no raw `docker` or `rm` commands needed.
+
+```bash
+make up          # deps + PostgreSQL + migrations + superuser + image + stack
+make check       # basedpyright + ruff + pytest
+make e2e         # HTTP smoke suite against the running stack
+make verify      # check + reseed + e2e
+make down        # stop the stack, keep the database volume
+make teardown    # DESTRUCTIVE: containers, volumes, images, .venv, caches
+make rebuild     # teardown + up + verify: the whole cycle from zero
+```
+
+`make rebuild` is the regression run. It removes every artifact (containers,
+images, volume, `.venv`, caches), rebuilds the virtualenv from `uv.lock`, applies
+migrations to an empty volume, seeds the superuser, builds the API image, then
+runs lint, the test suite, and the HTTP smoke checks. `make e2e` accepts
+`API_URL` to target another host (`API_URL=https://api.example.com make e2e`).
+
+Intermediate states are available if you want them: `make setup`, `make deps-up`,
+`make db-init`, `make docker-build`, `make docker-up`, `make db-reset`.
+
 ## Tests
 
 ```bash
 make test                 # pytest + coverage, wipes users/items in the dev DB
 make test-pytest ARGS='tests/api -k login -x'
 make test-ci              # same suite, assumes PostgreSQL is already running
+make e2e                  # HTTP smoke checks against a running stack
 ```
 
 Coverage HTML is written to `htmlcov/index.html`.

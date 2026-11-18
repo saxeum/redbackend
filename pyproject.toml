@@ -50,8 +50,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# The migration runner is a CLI: printing progress is its interface.
+# CLI entry points: printing progress is their interface.
 "migrations/run.py" = ["T201"]
+"tests/e2e/smoke.py" = ["T201"]
 
 # Type checking. Kept deliberately identical for the CLI (uv run basedpyright)
 # and the basedpyright language server in Zed: both read this table.
