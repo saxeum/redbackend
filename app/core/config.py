@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
 
     @property
+    def frontend_origin_regex(self) -> str | None:
+        if self.FASTAPI_ENV != "development":
+            return None
+        return r"^http://(localhost|127\.0\.0\.1|\[::1\]):\d+$"
+
+    @property
     def frontend_origins(self) -> list[str]:
         origins = [self.FRONTEND_HOST]
         origins.extend(
