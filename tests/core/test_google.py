@@ -5,7 +5,10 @@ replaced with one that returns the matching public key.
 """
 
 import base64
+import hashlib
 import json
+import urllib.error
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -200,3 +203,116 @@ def test_hs256_tokens_are_not_recognised() -> None:
     token = header.decode().rstrip("=") + ".e30.c2ln"
 
     assert google.is_google_token(token) is False
+
+
+class _TokenResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> _TokenResponse:
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+def _configure_redirect_flow(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", CLIENT_ID)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth")
+
+
+def test_pkce_pair_uses_s256() -> None:
+    verifier, challenge = google.create_pkce_pair()
+
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    assert challenge == expected
+
+
+def test_authorization_url_contains_the_redirect_contract(
+    monkeypatch: Any,
+) -> None:
+    _configure_redirect_flow(monkeypatch)
+
+    url = google.authorization_url(state="state-1", code_challenge="challenge-1")
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+
+    assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    assert query["client_id"] == [CLIENT_ID]
+    assert query["redirect_uri"] == ["http://localhost:8000/auth"]
+    assert query["response_type"] == ["code"]
+    assert query["scope"] == ["openid email profile"]
+    assert query["state"] == ["state-1"]
+    assert query["code_challenge"] == ["challenge-1"]
+    assert query["code_challenge_method"] == ["S256"]
+
+
+def test_exchange_code_returns_the_id_token(
+    monkeypatch: Any,
+) -> None:
+    _configure_redirect_flow(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: int) -> _TokenResponse:
+        captured["url"] = request.full_url
+        captured["body"] = urllib.parse.parse_qs(request.data.decode())
+        captured["timeout"] = timeout
+        return _TokenResponse(json.dumps({"id_token": "google-id-token"}).encode())
+
+    monkeypatch.setattr(google.urlrequest, "urlopen", fake_urlopen)
+
+    token = google.exchange_code_for_id_token(
+        code="auth-code", code_verifier="verifier"
+    )
+
+    assert token == "google-id-token"
+    assert captured["url"] == google.GOOGLE_TOKEN_URL
+    assert captured["body"]["client_secret"] == ["client-secret"]
+    assert captured["body"]["code"] == ["auth-code"]
+    assert captured["body"]["code_verifier"] == ["verifier"]
+    assert captured["body"]["redirect_uri"] == ["http://localhost:8000/auth"]
+
+
+def test_exchange_code_requires_a_secret(monkeypatch: Any) -> None:
+    _configure_redirect_flow(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", None)
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        google.exchange_code_for_id_token(code="auth-code", code_verifier="verifier")
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN
+
+
+def test_exchange_code_rejects_a_missing_id_token(monkeypatch: Any) -> None:
+    _configure_redirect_flow(monkeypatch)
+    monkeypatch.setattr(
+        google.urlrequest,
+        "urlopen",
+        lambda request, timeout: _TokenResponse(json.dumps({}).encode()),
+    )
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        google.exchange_code_for_id_token(code="auth-code", code_verifier="verifier")
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN
+
+
+def test_exchange_code_maps_network_failures(monkeypatch: Any) -> None:
+    _configure_redirect_flow(monkeypatch)
+
+    def fail(request: Any, timeout: int) -> _TokenResponse:
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(google.urlrequest, "urlopen", fail)
+
+    with pytest.raises(AuthenticationFailed) as exc:
+        google.exchange_code_for_id_token(code="auth-code", code_verifier="verifier")
+
+    assert exc.value.code is ErrorCode.INVALID_TOKEN

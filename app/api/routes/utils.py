@@ -17,5 +17,6 @@ def read_config() -> ConfigResponse:
     """Which sign-in methods this deployment offers (public, no secrets)."""
     return ConfigResponse(
         password_login=settings.ENABLE_PASSWORD_LOGIN,
+        google_login=bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
         google_client_id=settings.GOOGLE_CLIENT_ID,
     )

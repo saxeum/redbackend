@@ -93,43 +93,47 @@ from `.venv`, and covers `app/`, `tests/` and `migrations/`. CI runs the same
 
 Two ways to obtain a bearer credential:
 
-| Flow | Endpoint | Credential |
+| Flow | Entry point | Credential |
 |---|---|---|
-| Google sign-in (OIDC) | `POST /api/v1/auth/google` | a Google **ID token** |
+| Google sign-in (OIDC authorization code) | `GET /api/v1/auth/google/start` | our HS256 JWT |
 | Password grant (dev only) | `POST /api/v1/login/access-token` | our HS256 JWT |
 
-**Google sign-in.** The SPA runs the Google flow and posts the resulting ID
-token as `{"id_token": "..."}`. This service is an OIDC *resource server*: it
-verifies the token against Google's JWKS (signature, `iss`, `aud`, `exp`) and
-requires a verified email. The same ID token is then accepted as the bearer
-credential on every authenticated route, so there is no server-side session.
+**Google sign-in.** The SPA navigates to `/api/v1/auth/google/start`. The
+backend generates state + PKCE, sets a short-lived httpOnly cookie, and
+redirects to Google. Google returns the authorization code to the registered
+`GOOGLE_REDIRECT_URI` (`/auth`), where the backend exchanges it using the
+server-side client secret, verifies the resulting ID token against Google's
+JWKS (signature, `iss`, `aud`, `exp`), resolves the local account, and issues
+our own access token. It then redirects to
+`${FRONTEND_HOST}/auth/callback#access_token=...`.
 
-`POST /auth/google` also resolves the token to a local account: first sign-in
-creates a `user` row with no password; an email that already exists is *linked*
-by storing Google's `sub` in `user.google_sub`, and the local password keeps
-working. Accounts deactivated here cannot sign in through Google either.
+The client secret never reaches the SPA. `POST /api/v1/auth/google` remains as
+a resource-server adapter for clients that can obtain a Google ID token
+directly; the browser flow uses the redirect endpoint.
+
+First sign-in creates a `user` row with no password; an email that already
+exists is *linked* by storing Google's `sub` in `user.google_sub`, and the local
+password keeps working. Accounts deactivated here cannot sign in through Google
+either.
 
 Configuration (see `.env.example`):
 
 | Variable | Meaning |
 |---|---|
-| `GOOGLE_CLIENT_ID` | audience the ID tokens are issued for. Shared with zuchat. Unset means Google sign-in fails closed. |
-| `ALLOWED_EMAILS` | comma-separated allowlist of Google accounts. Empty means any verified account. |
+| `GOOGLE_CLIENT_ID` | OAuth client id. Unset means Google sign-in is disabled. |
+| `GOOGLE_CLIENT_SECRET` | Server-side client secret. Never expose it in the SPA. |
+| `GOOGLE_REDIRECT_URI` | Must exactly match an Authorized redirect URI on the OAuth client. Default: `http://localhost:8000/auth`. |
+| `ALLOWED_EMAILS` | Comma-separated allowlist of Google accounts. Empty means any verified account. |
 | `ENABLE_PASSWORD_LOGIN` | `false` disables the password grant and rejects outstanding password-grant tokens. |
 
-Only the client id is needed: the token's `aud` is that id, so no client secret
-is stored here. The OAuth client's authorised redirect URIs belong to the
-frontend. Invalid, expired or wrongly-scoped tokens return `401` with a generic
-detail and a `WWW-Authenticate: Bearer` header; an account outside the
-allowlist returns `403`.
-
-**What the SPA reads.** `GET /api/v1/utils/config` returns
-`{"password_login": bool, "google_client_id": str | null}`, so one image can
-serve both modes: render the Google button when a client id is present and the
-password form while `password_login` is on. `UserResponse.has_password` tells
-the UI whether to offer "change password" — accounts created through Google
-have none. Public self-registration (`POST /users/signup`) follows the same
-flag, since it only exists to create password accounts.
+Invalid, expired, or wrongly-scoped ID tokens produce a generic failure
+redirect; an account outside the allowlist redirects with
+`google_error=not_allowed`. `GET /api/v1/utils/config` reports
+`{"password_login": bool, "google_login": bool, "google_client_id": str | null}`
+so one image can serve both modes. `UserResponse.has_password` tells the UI
+whether to offer "change password" — accounts created through Google have none.
+Public self-registration follows the password flag, since it only exists to
+create password accounts.
 
 ## Migrations
 

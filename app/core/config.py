@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Google OIDC. Same OAuth client as zuchat; ID tokens are issued for this
     # client id (audience), so no client secret is needed for token validation.
     GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth"
     # Comma-separated allowlist. Empty means "any verified Google account".
     ALLOWED_EMAILS: str = ""
     # Password grant stays available during the OIDC migration; turn it off in prod.

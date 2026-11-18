@@ -74,6 +74,10 @@
             ],
             "title": "Google Client Id"
           },
+          "google_login": {
+            "title": "Google Login",
+            "type": "boolean"
+          },
           "password_login": {
             "title": "Password Login",
             "type": "boolean"
@@ -81,6 +85,7 @@
         },
         "required": [
           "password_login",
+          "google_login",
           "google_client_id"
         ],
         "title": "ConfigResponse",
@@ -683,6 +688,26 @@
           }
         },
         "summary": "Login With Google",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/google/start": {
+      "get": {
+        "description": "Begin the authorization-code flow with Google.",
+        "operationId": "auth-google_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Google Start",
         "tags": [
           "auth"
         ]

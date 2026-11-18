@@ -42,6 +42,7 @@ MESSAGES: dict[ErrorCode, MessageSpec] = {
         403, "This account is not allowed to sign in"
     ),
     ErrorCode.PASSWORD_LOGIN_DISABLED: MessageSpec(404, "Password login is disabled"),
+    ErrorCode.GOOGLE_LOGIN_DISABLED: MessageSpec(404, "Google login is disabled"),
     ErrorCode.INACTIVE_USER: MessageSpec(400, "Inactive user"),
     ErrorCode.PASSWORD_UNCHANGED: MessageSpec(
         400, "New password cannot be the same as the current one"

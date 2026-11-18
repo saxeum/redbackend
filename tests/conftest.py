@@ -47,6 +47,7 @@ def _deterministic_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ALLOWED_EMAILS", "")
     monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", True)
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", None)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", None)
 
 
 @pytest.fixture

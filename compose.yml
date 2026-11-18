@@ -32,6 +32,8 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?Variable not set}@db:5432/app
       SENTRY_DSN: ${SENTRY_DSN:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/auth}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ENABLE_PASSWORD_LOGIN: ${ENABLE_PASSWORD_LOGIN:-true}
     healthcheck:

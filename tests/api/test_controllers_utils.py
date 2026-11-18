@@ -18,7 +18,11 @@ def test_config_reports_the_defaults(
     response = client.get(f"{API}/utils/config")
 
     assert response.status_code == 200
-    assert response.json() == {"password_login": True, "google_client_id": None}
+    assert response.json() == {
+        "password_login": True,
+        "google_login": False,
+        "google_client_id": None,
+    }
 
 
 def test_config_reflects_the_deployment(
@@ -31,8 +35,10 @@ def test_config_reflects_the_deployment(
     monkeypatch.setattr(
         settings, "GOOGLE_CLIENT_ID", "client.apps.googleusercontent.com"
     )
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
 
     assert client.get(f"{API}/utils/config").json() == {
         "password_login": False,
+        "google_login": True,
         "google_client_id": "client.apps.googleusercontent.com",
     }

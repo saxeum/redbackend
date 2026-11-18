@@ -111,4 +111,5 @@ class ConfigResponse(BaseModel):
     """Public runtime settings the SPA reads before it renders a login form."""
 
     password_login: bool
+    google_login: bool
     google_client_id: str | None

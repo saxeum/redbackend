@@ -105,6 +105,7 @@ def main() -> int:
     def runtime_config() -> str:
         config = call("GET", "/utils/config")
         assert isinstance(config["password_login"], bool), config
+        assert isinstance(config["google_login"], bool), config
         assert "google_client_id" in config, config
         return f"password_login={config['password_login']}"
 
