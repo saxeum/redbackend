@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="1240" viewBox="0 0 1360 1240" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1360" height="1240" fill="#fdfdfc"/>
+
+  <text x="20" y="34" font-size="18" font-weight="700" fill="#0f172a">GET /api/v1/items/ — from app.main to the SQL call</text>
+
+  <g transform="translate(0,30)">
+
+    <!-- lane headers -->
+    <text x="20" y="34" font-size="10.5" letter-spacing="1.6" fill="#94a3b8">DEPENDENCIES &#38; AUTH</text>
+    <text x="340" y="34" font-size="10.5" letter-spacing="1.6" fill="#94a3b8">CALL PATH</text>
+    <text x="840" y="34" font-size="10.5" letter-spacing="1.6" fill="#94a3b8">RETURN PATH</text>
+
+    <!-- ================= CALL PATH ================= -->
+
+    <!-- ASGI -->
+    <rect x="340" y="54" width="470" height="58" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+    <rect x="340" y="54" width="6" height="58" rx="3" fill="#64748b"/>
+    <text x="360" y="78" font-size="12" font-weight="600" fill="#64748b">uvicorn · ASGI</text>
+    <text x="360" y="97" font-size="12" fill="#0f172a">GET /api/v1/items/ + Authorization: Bearer &lt;jwt&gt;</text>
+
+    <!-- main -->
+    <rect x="340" y="148" width="470" height="94" rx="10" fill="#ffffff" stroke="#0ea5e9" stroke-width="1.5"/>
+    <rect x="340" y="148" width="6" height="94" rx="3" fill="#0ea5e9"/>
+    <text x="360" y="172" font-size="12" font-weight="600" fill="#0ea5e9">app/main.py</text>
+    <text x="360" y="194" font-size="12" fill="#0f172a">app = FastAPI(openapi_url="/api/v1/openapi.json")</text>
+    <text x="360" y="213" font-size="12" fill="#0f172a">app.include_router(api_router, prefix="/api/v1")</text>
+    <text x="360" y="232" font-size="12" fill="#0f172a">register_exception_handlers(app)</text>
+
+    <!-- api router -->
+    <rect x="340" y="280" width="470" height="66" rx="10" fill="#ffffff" stroke="#6366f1" stroke-width="1.5"/>
+    <rect x="340" y="280" width="6" height="66" rx="3" fill="#6366f1"/>
+    <text x="360" y="304" font-size="12" font-weight="600" fill="#6366f1">app/api/main.py</text>
+    <text x="360" y="328" font-size="12" fill="#0f172a">api_router.include_router(items.router)</text>
+
+    <!-- route -->
+    <rect x="340" y="384" width="470" height="112" rx="10" fill="#ffffff" stroke="#6366f1" stroke-width="1.5"/>
+    <rect x="340" y="384" width="6" height="112" rx="3" fill="#6366f1"/>
+    <text x="360" y="408" font-size="12" font-weight="600" fill="#6366f1">app/api/routes/items.py · read_items()</text>
+    <text x="360" y="432" font-size="12" fill="#0f172a">conn: ConnDep, actor: CurrentUser, skip, limit</text>
+    <text x="360" y="452" font-size="12" fill="#0f172a">items, count = item_service.list_items(...)</text>
+    <text x="360" y="472" font-size="12" fill="#0f172a">return to_item_list_response(items, count)</text>
+
+    <!-- service -->
+    <rect x="340" y="532" width="470" height="104" rx="10" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="340" y="532" width="6" height="104" rx="3" fill="#10b981"/>
+    <text x="360" y="556" font-size="12" font-weight="600" fill="#10b981">app/services/items.py · list_items()</text>
+    <text x="360" y="580" font-size="12" fill="#0f172a">owner_id = None if actor.is_superuser else actor.id</text>
+    <text x="360" y="600" font-size="12" fill="#0f172a">return item_repo.list_page(conn, owner_id, skip, limit)</text>
+
+    <!-- repository -->
+    <rect x="340" y="672" width="470" height="118" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <rect x="340" y="672" width="6" height="118" rx="3" fill="#8b5cf6"/>
+    <text x="360" y="696" font-size="12" font-weight="600" fill="#8b5cf6">app/repositories/items.py · list_page()</text>
+    <text x="360" y="720" font-size="12" fill="#0f172a">total = conn.execute("SELECT count(*) ...").fetchone()</text>
+    <text x="360" y="740" font-size="12" fill="#0f172a">rows = conn.execute(SELECT ... OFFSET %s LIMIT %s)</text>
+    <text x="360" y="760" font-size="12" fill="#0f172a">            .fetchall()  -&gt;  list[DictRow]</text>
+
+    <!-- execute -->
+    <rect x="340" y="826" width="470" height="132" rx="10" fill="#fff7f7" stroke="#ef4444" stroke-width="1.5"/>
+    <rect x="340" y="826" width="6" height="132" rx="3" fill="#ef4444"/>
+    <text x="360" y="850" font-size="12" font-weight="600" fill="#ef4444">psycopg 3 · Connection.execute()</text>
+    <text x="360" y="874" font-size="11.5" fill="#0f172a">SELECT id, title, description, owner_id, created_at</text>
+    <text x="360" y="892" font-size="11.5" fill="#0f172a">FROM item [WHERE owner_id = %s]</text>
+    <text x="360" y="910" font-size="11.5" fill="#0f172a">ORDER BY created_at DESC OFFSET %s LIMIT %s</text>
+    <text x="360" y="934" font-size="11" fill="#64748b">%s bound params · row_factory=dict_row</text>
+
+    <!-- postgres -->
+    <rect x="340" y="980" width="470" height="72" rx="10" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+    <rect x="340" y="980" width="6" height="72" rx="3" fill="#2563eb"/>
+    <text x="360" y="1004" font-size="12" font-weight="600" fill="#2563eb">PostgreSQL 18</text>
+    <text x="360" y="1028" font-size="12" fill="#0f172a">public.item · index ix_item_owner_id</text>
+
+    <!-- call path arrows -->
+    <path d="M575 112 L575 148" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 242 L575 280" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 346 L575 384" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 496 L575 532" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 636 L575 672" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 790 L575 826" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M575 958 L575 980" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- ================= DEPENDENCIES ================= -->
+
+    <!-- pool -->
+    <rect x="20" y="148" width="290" height="96" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+    <rect x="20" y="148" width="6" height="96" rx="3" fill="#f59e0b"/>
+    <text x="38" y="172" font-size="11.5" font-weight="600" fill="#f59e0b">app/core/db.py · pool</text>
+    <text x="38" y="196" font-size="11" fill="#0f172a">ConnectionPool(min_size=1,</text>
+    <text x="38" y="214" font-size="11" fill="#0f172a">               max_size=10)</text>
+    <text x="38" y="234" font-size="11" fill="#0f172a">pool.connection() -&gt; DBConnection</text>
+
+    <!-- get_current_user -->
+    <rect x="20" y="280" width="290" height="140" rx="10" fill="#ffffff" stroke="#f59e0b" stroke-width="1.5"/>
+    <rect x="20" y="280" width="6" height="140" rx="3" fill="#f59e0b"/>
+    <text x="38" y="304" font-size="11.5" font-weight="600" fill="#f59e0b">app/api/deps.py · get_current_user()</text>
+    <text x="38" y="328" font-size="11" fill="#0f172a">jwt.decode(token, SECRET_KEY)</text>
+    <text x="38" y="346" font-size="11" fill="#64748b">app/core/security.py</text>
+    <text x="38" y="370" font-size="11" fill="#0f172a">uuid.UUID(payload["sub"])</text>
+    <text x="38" y="394" font-size="11" fill="#0f172a">-&gt; services/users.get_active_user()</text>
+
+    <!-- get_active_user -->
+    <rect x="20" y="460" width="290" height="110" rx="10" fill="#ffffff" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="20" y="460" width="6" height="110" rx="3" fill="#10b981"/>
+    <text x="38" y="484" font-size="11.5" font-weight="600" fill="#10b981">services/users.py · get_active_user()</text>
+    <text x="38" y="508" font-size="11" fill="#0f172a">user_repo.get_by_id(conn, user_id)</text>
+    <text x="38" y="528" font-size="11" fill="#0f172a">raise NotFound / InactiveUser</text>
+    <text x="38" y="548" font-size="11" fill="#0f172a">-&gt; domain.User</text>
+
+    <!-- users repo -->
+    <rect x="20" y="610" width="290" height="110" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <rect x="20" y="610" width="6" height="110" rx="3" fill="#8b5cf6"/>
+    <text x="38" y="634" font-size="11.5" font-weight="600" fill="#8b5cf6">repositories/users.py · get_by_id()</text>
+    <text x="38" y="658" font-size="11" fill="#0f172a">SELECT ... FROM "user" WHERE id = %s</text>
+    <text x="38" y="678" font-size="11" fill="#64748b">-&gt; domain.User | None</text>
+
+    <!-- dependency arrows -->
+    <path d="M20 420 L20 460" stroke="#475569" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <path d="M20 570 L20 610" stroke="#475569" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- conn into route -->
+    <path d="M310 198 L322 198 L322 416 L340 416" stroke="#f59e0b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <text x="314" y="192" font-size="10" fill="#b45309">conn</text>
+
+    <!-- actor into route -->
+    <path d="M310 300 L332 300 L332 456 L340 456" stroke="#f59e0b" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+    <text x="314" y="294" font-size="10" fill="#b45309">actor</text>
+
+    <!-- auth query reaches the same database -->
+    <path d="M20 665 L10 665 L10 1016 L340 1016" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow-dash)"/>
+    <text x="16" y="1060" font-size="10" fill="#94a3b8">same pool</text>
+
+    <!-- ================= RETURN PATH ================= -->
+
+    <!-- rows -->
+    <rect x="840" y="980" width="490" height="72" rx="10" fill="#ffffff" stroke="#ef4444" stroke-width="1.5"/>
+    <rect x="840" y="980" width="6" height="72" rx="3" fill="#ef4444"/>
+    <text x="858" y="1004" font-size="12" font-weight="600" fill="#ef4444">rows · list[DictRow]</text>
+    <text x="858" y="1028" font-size="11" fill="#0f172a">{"id": UUID, "title": str, "owner_id": UUID, ...}</text>
+
+    <!-- _to_item -->
+    <rect x="840" y="846" width="490" height="104" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+    <rect x="840" y="846" width="6" height="104" rx="3" fill="#8b5cf6"/>
+    <text x="858" y="870" font-size="12" font-weight="600" fill="#8b5cf6">repositories/items.py · _to_item()</text>
+    <text x="858" y="894" font-size="11" fill="#0f172a">Item(id=..., title=..., description=...,</text>
+    <text x="858" y="913" font-size="11" fill="#0f172a">     owner_id=..., created_at=...)</text>
+    <text x="858" y="935" font-size="10.5" fill="#64748b">app/domain/models.py</text>
+
+    <!-- mapper -->
+    <rect x="840" y="712" width="490" height="104" rx="10" fill="#ffffff" stroke="#0ea5e9" stroke-width="1.5"/>
+    <rect x="840" y="712" width="6" height="104" rx="3" fill="#0ea5e9"/>
+    <text x="858" y="736" font-size="12" font-weight="600" fill="#0ea5e9">app/api/mappers.py · to_item_list_response()</text>
+    <text x="858" y="760" font-size="11" fill="#0f172a">ItemResponse(id=..., title=..., owner_id=...)</text>
+    <text x="858" y="779" font-size="11" fill="#0f172a">-&gt; ItemListResponse(data=[...], count=n)</text>
+    <text x="858" y="801" font-size="10.5" fill="#64748b">app/api/schemas.py</text>
+
+    <!-- response_model -->
+    <rect x="840" y="578" width="490" height="104" rx="10" fill="#ffffff" stroke="#0ea5e9" stroke-width="1.5"/>
+    <rect x="840" y="578" width="6" height="104" rx="3" fill="#0ea5e9"/>
+    <text x="858" y="602" font-size="12" font-weight="600" fill="#0ea5e9">FastAPI · response_model</text>
+    <text x="858" y="626" font-size="11" fill="#0f172a">validates against ItemListResponse</text>
+    <text x="858" y="645" font-size="11" fill="#0f172a">(mismatch raises ResponseValidationError)</text>
+    <text x="858" y="667" font-size="10.5" fill="#64748b">JSONResponse</text>
+
+    <!-- 200 -->
+    <rect x="840" y="444" width="490" height="104" rx="10" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+    <rect x="840" y="444" width="6" height="104" rx="3" fill="#16a34a"/>
+    <text x="858" y="468" font-size="12" font-weight="600" fill="#16a34a">HTTP 200</text>
+    <text x="858" y="492" font-size="11" fill="#0f172a">{"data": [{"id": ..., "title": ...}],</text>
+    <text x="858" y="511" font-size="11" fill="#0f172a"> "count": n}</text>
+
+    <!-- error handlers -->
+    <rect x="840" y="54" width="490" height="212" rx="10" fill="#fffafa" stroke="#ef4444" stroke-width="1.5"/>
+    <rect x="840" y="54" width="6" height="212" rx="3" fill="#ef4444"/>
+    <text x="858" y="78" font-size="12" font-weight="600" fill="#ef4444">app/api/errors.py · handlers</text>
+    <text x="858" y="104" font-size="11" fill="#0f172a">NotFound                -&gt; 404</text>
+    <text x="858" y="124" font-size="11" fill="#0f172a">PermissionDenied        -&gt; 403</text>
+    <text x="858" y="144" font-size="11" fill="#0f172a">EmailAlreadyRegistered  -&gt; 400</text>
+    <text x="858" y="164" font-size="11" fill="#0f172a">Conflict                -&gt; 409</text>
+    <text x="858" y="184" font-size="11" fill="#0f172a">InvalidCredentials      -&gt; 400</text>
+    <text x="858" y="204" font-size="11" fill="#0f172a">InactiveUser            -&gt; 400</text>
+    <text x="858" y="224" font-size="11" fill="#0f172a">InvalidOperation        -&gt; 400</text>
+    <text x="858" y="248" font-size="10.5" fill="#64748b">body: {"detail": "..."}</text>
+
+    <!-- return arrows (upwards) -->
+    <path d="M810 1016 L840 1016" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M1085 980 L1085 950" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M1085 846 L1085 816" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M1085 712 L1085 682" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+    <path d="M1085 578 L1085 548" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- service raises domain error -->
+    <path d="M810 570 L825 570 L825 262 L1000 262 L1000 266" stroke="#ef4444" stroke-width="1.4" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow-dash)"/>
+    <text x="828" y="282" font-size="10" fill="#b91c1c">raises domain error</text>
+
+    <!-- notes -->
+    <rect x="20" y="1090" width="1310" height="80" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+    <text x="40" y="1116" font-size="11.5" fill="#334155">Errors — services raise app/domain/errors.py exceptions; app/api/errors.py maps each to a 4xx with {"detail": ...}. Auth failures in deps.py keep FastAPI's default 401/403.</text>
+    <text x="40" y="1140" font-size="11.5" fill="#334155">Writes — services call app/core/db.py::commit before returning, so a concurrent request never reads uncommitted state; a raised error rolls the transaction back.</text>
+    <text x="40" y="1162" font-size="10.5" fill="#94a3b8">Read-only path shown; POST/PATCH go through the same route → mapper → service → repository chain with a command instead of query params.</text>
+  </g>
+</svg>

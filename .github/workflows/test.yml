@@ -25,6 +25,7 @@ jobs:
           --health-retries 5
     env:
       FASTAPI_ENV: development
+      ENABLE_PRIVATE_ROUTER: "true"
       PROJECT_NAME: Red Backend
       SECRET_KEY: changethis
       FIRST_SUPERUSER: admin@example.com
@@ -41,6 +42,8 @@ jobs:
         run: uv sync
       - name: Lint
         run: make lint
+      - name: OpenAPI artifact up to date
+        run: make openapi-check
       - name: Prepare database
         run: make db-seed
       - name: Run tests

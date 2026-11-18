@@ -53,6 +53,8 @@ ignore = [
 # CLI entry points: printing progress is their interface.
 "migrations/run.py" = ["T201"]
 "tests/e2e/smoke.py" = ["T201"]
+# Test doubles mirror the real signatures, including arguments they ignore.
+"tests/**" = ["ARG001"]
 
 # Type checking. Kept deliberately identical for the CLI (uv run basedpyright)
 # and the basedpyright language server in Zed: both read this table.

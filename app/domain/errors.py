@@ -1,14 +1,32 @@
 """Domain-level failures.
 
-Services raise these instead of HTTP errors; the API layer maps them to
-transport responses (see app/api/errors.py).
+Errors carry a machine-readable code only. Status codes and user-facing text
+live in the controller layer (app/api/messages.py).
 """
+
+from enum import StrEnum
+
+
+class ErrorCode(StrEnum):
+    ITEM_NOT_FOUND = "item_not_found"
+    ITEM_PERMISSION_DENIED = "item_permission_denied"
+    USER_NOT_FOUND = "user_not_found"
+    USER_NOT_FOUND_FOR_UPDATE = "user_not_found_for_update"
+    INSUFFICIENT_PRIVILEGES = "insufficient_privileges"
+    SELF_DELETE_FORBIDDEN = "self_delete_forbidden"
+    EMAIL_TAKEN = "email_taken"
+    EMAIL_TAKEN_ON_CREATE = "email_taken_on_create"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    INCORRECT_PASSWORD = "incorrect_password"
+    INVALID_TOKEN = "invalid_token"
+    INACTIVE_USER = "inactive_user"
+    PASSWORD_UNCHANGED = "password_unchanged"
 
 
 class DomainError(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
+    def __init__(self, code: ErrorCode) -> None:
+        super().__init__(code.value)
+        self.code = code
 
 
 class NotFound(DomainError):
@@ -23,16 +41,16 @@ class Conflict(DomainError):
     """The operation conflicts with existing state."""
 
 
-class EmailAlreadyRegistered(Conflict):
-    """A signup or admin create hit an existing email."""
-
-
 class InvalidCredentials(DomainError):
-    """Email/password combination is wrong."""
+    """The supplied credentials are wrong."""
 
 
 class InactiveUser(DomainError):
     """Credentials are valid but the account is disabled."""
+
+
+class AuthenticationFailed(DomainError):
+    """The bearer token is missing, malformed or not decodable."""
 
 
 class InvalidOperation(DomainError):

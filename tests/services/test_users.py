@@ -1,201 +1,268 @@
 import uuid
+from typing import Any
 
 import pytest
 from pwdlib.hashers.bcrypt import BcryptHasher
 
-from app.core.db import DBConnection
-from app.core.security import verify_password
+from app.core.security import get_password_hash, verify_password
 from app.domain.commands import CreateUser, UpdateUser
 from app.domain.errors import (
     Conflict,
-    EmailAlreadyRegistered,
+    ErrorCode,
     InactiveUser,
     InvalidCredentials,
     InvalidOperation,
     NotFound,
     PermissionDenied,
 )
-from app.domain.models import User
-from app.repositories import users as user_repo
 from app.services import users as user_service
-from tests.utils.user import create_test_user, create_user_with_hashed_password
-from tests.utils.utils import random_email, random_lower_string
+from tests.fakes import CONN, install_user_repo, make_user
 
 
-def _actor(db: DBConnection, *, is_superuser: bool = True) -> User:
-    return create_test_user(
-        db,
-        email=random_email(),
-        password=random_lower_string(),
-        is_superuser=is_superuser,
-    )
+def test_create_user_requires_superuser(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
 
-
-def test_create_user_by_admin(db: DBConnection) -> None:
-    actor = _actor(db)
-    email = random_email()
-
-    user = user_service.create_user(
-        conn=db, cmd=CreateUser(email=email, password="password123"), actor=actor
-    )
-
-    assert user.email == email
-    assert user.is_active is True
-    assert user.is_superuser is False
-    assert user.hashed_password
-
-
-def test_create_user_requires_superuser(db: DBConnection) -> None:
-    actor = _actor(db, is_superuser=False)
-
-    with pytest.raises(PermissionDenied):
+    with pytest.raises(PermissionDenied) as exc:
         user_service.create_user(
-            conn=db,
-            cmd=CreateUser(email=random_email(), password="password123"),
-            actor=actor,
+            conn=CONN,
+            cmd=CreateUser(email="new@example.com", password="password123"),
+            actor=make_user(is_superuser=False),
         )
 
+    assert exc.value.code is ErrorCode.INSUFFICIENT_PRIVILEGES
 
-def test_create_user_duplicate_email(db: DBConnection) -> None:
-    actor = _actor(db)
-    email = random_email()
-    user_service.create_user(
-        conn=db, cmd=CreateUser(email=email, password="password123"), actor=actor
+
+def test_create_user_persists_and_commits(monkeypatch: Any) -> None:
+    repo, commits = install_user_repo(monkeypatch)
+
+    created = user_service.create_user(
+        conn=CONN,
+        cmd=CreateUser(email="new@example.com", password="password123"),
+        actor=make_user(is_superuser=True),
     )
 
-    with pytest.raises(EmailAlreadyRegistered):
+    assert created.email == "new@example.com"
+    assert created.is_active is True
+    assert created.is_superuser is False
+    assert repo.users[created.id] == created
+    assert len(commits) == 1
+
+
+def test_create_user_duplicate_email(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch, [make_user(email="taken@example.com")])
+
+    with pytest.raises(Conflict) as exc:
         user_service.create_user(
-            conn=db, cmd=CreateUser(email=email, password="password123"), actor=actor
+            conn=CONN,
+            cmd=CreateUser(email="taken@example.com", password="password123"),
+            actor=make_user(is_superuser=True),
         )
 
+    assert exc.value.code is ErrorCode.EMAIL_TAKEN_ON_CREATE
 
-def test_signup_never_grants_superuser(db: DBConnection) -> None:
-    email = random_email()
 
-    user = user_service.signup(
-        conn=db,
-        cmd=CreateUser(email=email, password="password123", is_superuser=True),
+def test_signup_never_grants_superuser(monkeypatch: Any) -> None:
+    repo, _ = install_user_repo(monkeypatch)
+
+    created = user_service.signup(
+        conn=CONN,
+        cmd=CreateUser(
+            email="new@example.com", password="password123", is_superuser=True
+        ),
     )
 
-    assert user.is_superuser is False
-    assert user_repo.get_by_email(conn=db, email=email) is not None
+    assert created.is_superuser is False
+    assert repo.users[created.id].is_superuser is False
 
 
-def test_authenticate_user(db: DBConnection) -> None:
-    email = random_email()
-    password = random_lower_string()
-    user_service.signup(conn=db, cmd=CreateUser(email=email, password=password))
+def test_authenticate_success(monkeypatch: Any) -> None:
+    user = make_user(
+        email="person@example.com", hashed_password=get_password_hash("password123")
+    )
+    _, commits = install_user_repo(monkeypatch, [user])
 
-    authenticated = user_service.authenticate(conn=db, email=email, password=password)
+    authenticated = user_service.authenticate(
+        conn=CONN, email="person@example.com", password="password123"
+    )
 
-    assert authenticated.email == email
+    assert authenticated == user
+    assert commits == []
 
 
-def test_authenticate_unknown_email(db: DBConnection) -> None:
-    with pytest.raises(InvalidCredentials):
+def test_authenticate_unknown_email(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
+
+    with pytest.raises(InvalidCredentials) as exc:
         user_service.authenticate(
-            conn=db, email=random_email(), password=random_lower_string()
+            conn=CONN, email="nobody@example.com", password="password123"
         )
 
+    assert exc.value.code is ErrorCode.INVALID_CREDENTIALS
 
-def test_authenticate_wrong_password(db: DBConnection) -> None:
-    email = random_email()
-    user_service.signup(
-        conn=db, cmd=CreateUser(email=email, password=random_lower_string())
+
+def test_authenticate_wrong_password(monkeypatch: Any) -> None:
+    user = make_user(
+        email="person@example.com", hashed_password=get_password_hash("password123")
+    )
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InvalidCredentials) as exc:
+        user_service.authenticate(
+            conn=CONN, email="person@example.com", password="wrongpassword"
+        )
+
+    assert exc.value.code is ErrorCode.INVALID_CREDENTIALS
+
+
+def test_authenticate_inactive_user(monkeypatch: Any) -> None:
+    user = make_user(
+        email="person@example.com",
+        hashed_password=get_password_hash("password123"),
+        is_active=False,
+    )
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InactiveUser) as exc:
+        user_service.authenticate(
+            conn=CONN, email="person@example.com", password="password123"
+        )
+
+    assert exc.value.code is ErrorCode.INACTIVE_USER
+
+
+def test_authenticate_upgrades_bcrypt_hash(monkeypatch: Any) -> None:
+    bcrypt_hash = BcryptHasher().hash("password123")
+    user = make_user(email="legacy@example.com", hashed_password=bcrypt_hash)
+    repo, commits = install_user_repo(monkeypatch, [user])
+
+    authenticated = user_service.authenticate(
+        conn=CONN, email="legacy@example.com", password="password123"
     )
 
-    with pytest.raises(InvalidCredentials):
-        user_service.authenticate(conn=db, email=email, password=random_lower_string())
+    stored = repo.users[authenticated.id]
+    assert stored.hashed_password.startswith("$argon2")
+    assert len(commits) == 1
 
 
-def test_authenticate_inactive_user(db: DBConnection) -> None:
-    email = random_email()
-    password = random_lower_string()
-    create_test_user(db, email=email, password=password, is_active=False)
+def test_get_active_user_missing(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
+
+    with pytest.raises(NotFound) as exc:
+        user_service.get_active_user(conn=CONN, user_id=uuid.uuid4())
+
+    assert exc.value.code is ErrorCode.USER_NOT_FOUND
+
+
+def test_get_active_user_inactive(monkeypatch: Any) -> None:
+    user = make_user(is_active=False)
+    install_user_repo(monkeypatch, [user])
 
     with pytest.raises(InactiveUser):
-        user_service.authenticate(conn=db, email=email, password=password)
+        user_service.get_active_user(conn=CONN, user_id=user.id)
 
 
-def test_authenticate_upgrades_bcrypt_hash(db: DBConnection) -> None:
-    email = random_email()
-    password = random_lower_string()
-    bcrypt_hash = BcryptHasher().hash(password)
-    create_user_with_hashed_password(db=db, email=email, hashed_password=bcrypt_hash)
+def test_get_user_self(monkeypatch: Any) -> None:
+    user = make_user()
+    install_user_repo(monkeypatch, [user])
 
-    authenticated = user_service.authenticate(conn=db, email=email, password=password)
-
-    refreshed = user_repo.get_by_id(conn=db, user_id=authenticated.id)
-    assert refreshed
-    assert refreshed.hashed_password.startswith("$argon2")
+    assert user_service.get_user(conn=CONN, user_id=user.id, actor=user) == user
 
 
-def test_get_user_self(db: DBConnection) -> None:
-    user = create_test_user(db, email=random_email(), password=random_lower_string())
+def test_get_other_user_as_normal_user(monkeypatch: Any) -> None:
+    actor = make_user(email="actor@example.com", is_superuser=False)
+    other = make_user(email="other@example.com")
+    install_user_repo(monkeypatch, [actor, other])
 
-    found = user_service.get_user(conn=db, user_id=user.id, actor=user)
+    with pytest.raises(PermissionDenied) as exc:
+        user_service.get_user(conn=CONN, user_id=other.id, actor=actor)
 
-    assert found == user
-
-
-def test_get_user_other_as_normal_user(db: DBConnection) -> None:
-    actor = _actor(db, is_superuser=False)
-    other = create_test_user(db, email=random_email(), password=random_lower_string())
-
-    with pytest.raises(PermissionDenied):
-        user_service.get_user(conn=db, user_id=other.id, actor=actor)
+    assert exc.value.code is ErrorCode.INSUFFICIENT_PRIVILEGES
 
 
-def test_get_missing_user_as_superuser(db: DBConnection) -> None:
-    actor = _actor(db)
+def test_get_missing_user_as_superuser(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
 
-    with pytest.raises(NotFound):
-        user_service.get_user(conn=db, user_id=uuid.uuid4(), actor=actor)
+    with pytest.raises(NotFound) as exc:
+        user_service.get_user(
+            conn=CONN, user_id=uuid.uuid4(), actor=make_user(is_superuser=True)
+        )
+
+    assert exc.value.code is ErrorCode.USER_NOT_FOUND
 
 
-def test_list_users_requires_superuser(db: DBConnection) -> None:
-    actor = _actor(db, is_superuser=False)
+def test_list_users_requires_superuser(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
 
     with pytest.raises(PermissionDenied):
-        user_service.list_users(conn=db, actor=actor, skip=0, limit=10)
-
-
-def test_update_user_email_conflict(db: DBConnection) -> None:
-    actor = _actor(db)
-    first = create_test_user(db, email=random_email(), password=random_lower_string())
-    second = create_test_user(db, email=random_email(), password=random_lower_string())
-
-    with pytest.raises(Conflict):
-        user_service.update_user(
-            conn=db,
-            user_id=second.id,
-            cmd=UpdateUser(email=first.email, fields_set=frozenset({"email"})),
-            actor=actor,
+        user_service.list_users(
+            conn=CONN, actor=make_user(is_superuser=False), skip=0, limit=10
         )
 
 
-def test_update_me_changes_full_name(db: DBConnection) -> None:
-    user = create_test_user(db, email=random_email(), password=random_lower_string())
+def test_list_users_returns_page(monkeypatch: Any) -> None:
+    users = [make_user(email=f"user{i}@example.com") for i in range(3)]
+    install_user_repo(monkeypatch, users)
 
-    updated = user_service.update_me(
-        conn=db,
-        actor=user,
-        cmd=UpdateUser(full_name="Jane", fields_set=frozenset({"full_name"})),
+    page, count = user_service.list_users(
+        conn=CONN, actor=make_user(is_superuser=True), skip=0, limit=2
     )
 
-    assert updated.full_name == "Jane"
+    assert count == 3
+    assert len(page) == 2
 
 
-def test_update_me_can_clear_full_name(db: DBConnection) -> None:
-    user = create_test_user(db, email=random_email(), password=random_lower_string())
-    user_service.update_me(
-        conn=db,
-        actor=user,
-        cmd=UpdateUser(full_name="Jane", fields_set=frozenset({"full_name"})),
+def test_update_user_missing(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
+
+    with pytest.raises(NotFound) as exc:
+        user_service.update_user(
+            conn=CONN,
+            user_id=uuid.uuid4(),
+            cmd=UpdateUser(full_name="X", fields_set=frozenset({"full_name"})),
+            actor=make_user(is_superuser=True),
+        )
+
+    assert exc.value.code is ErrorCode.USER_NOT_FOUND_FOR_UPDATE
+
+
+def test_update_user_email_conflict(monkeypatch: Any) -> None:
+    first = make_user(email="first@example.com")
+    second = make_user(email="second@example.com")
+    install_user_repo(monkeypatch, [first, second])
+
+    with pytest.raises(Conflict) as exc:
+        user_service.update_user(
+            conn=CONN,
+            user_id=second.id,
+            cmd=UpdateUser(email="first@example.com", fields_set=frozenset({"email"})),
+            actor=make_user(is_superuser=True),
+        )
+
+    assert exc.value.code is ErrorCode.EMAIL_TAKEN
+
+
+def test_update_user_applies_changes(monkeypatch: Any) -> None:
+    user = make_user(email="person@example.com")
+    repo, commits = install_user_repo(monkeypatch, [user])
+
+    updated = user_service.update_user(
+        conn=CONN,
+        user_id=user.id,
+        cmd=UpdateUser(full_name="Renamed", fields_set=frozenset({"full_name"})),
+        actor=make_user(is_superuser=True),
     )
 
+    assert updated.full_name == "Renamed"
+    assert repo.users[user.id].full_name == "Renamed"
+    assert len(commits) == 1
+
+
+def test_update_me_can_clear_full_name(monkeypatch: Any) -> None:
+    user = make_user(full_name="Old")
+    install_user_repo(monkeypatch, [user])
+
     updated = user_service.update_me(
-        conn=db,
+        conn=CONN,
         actor=user,
         cmd=UpdateUser(full_name=None, fields_set=frozenset({"full_name"})),
     )
@@ -203,62 +270,104 @@ def test_update_me_can_clear_full_name(db: DBConnection) -> None:
     assert updated.full_name is None
 
 
-def test_change_password_wrong_current(db: DBConnection) -> None:
-    user = create_test_user(db, email=random_email(), password=random_lower_string())
+def test_change_password_wrong_current(monkeypatch: Any) -> None:
+    user = make_user(hashed_password=get_password_hash("password123"))
+    install_user_repo(monkeypatch, [user])
 
-    with pytest.raises(InvalidCredentials):
+    with pytest.raises(InvalidCredentials) as exc:
         user_service.change_password(
-            conn=db,
+            conn=CONN,
             actor=user,
-            current_password="wrongpassword1",
-            new_password="newpassword1",
+            current_password="wrongpassword",
+            new_password="newpassword123",
         )
 
+    assert exc.value.code is ErrorCode.INCORRECT_PASSWORD
 
-def test_change_password_same_value(db: DBConnection) -> None:
-    password = random_lower_string()
-    user = create_test_user(db, email=random_email(), password=password)
 
-    with pytest.raises(InvalidOperation):
+def test_change_password_same_value(monkeypatch: Any) -> None:
+    user = make_user(hashed_password=get_password_hash("password123"))
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InvalidOperation) as exc:
         user_service.change_password(
-            conn=db,
+            conn=CONN,
             actor=user,
-            current_password=password,
-            new_password=password,
+            current_password="password123",
+            new_password="password123",
         )
 
+    assert exc.value.code is ErrorCode.PASSWORD_UNCHANGED
 
-def test_change_password_updates_hash(db: DBConnection) -> None:
-    password = random_lower_string()
-    new_password = random_lower_string()
-    user = create_test_user(db, email=random_email(), password=password)
+
+def test_change_password_updates_hash(monkeypatch: Any) -> None:
+    user = make_user(hashed_password=get_password_hash("password123"))
+    repo, commits = install_user_repo(monkeypatch, [user])
 
     user_service.change_password(
-        conn=db, actor=user, current_password=password, new_password=new_password
+        conn=CONN,
+        actor=user,
+        current_password="password123",
+        new_password="newpassword123",
     )
 
-    refreshed = user_repo.get_by_id(conn=db, user_id=user.id)
-    assert refreshed
-    verified, _ = verify_password(new_password, refreshed.hashed_password)
+    verified, _ = verify_password("newpassword123", repo.users[user.id].hashed_password)
     assert verified
+    assert len(commits) == 1
 
 
-def test_delete_me_forbidden_for_superuser(db: DBConnection) -> None:
-    actor = _actor(db)
-
-    with pytest.raises(PermissionDenied):
-        user_service.delete_me(conn=db, actor=actor)
-
-
-def test_delete_user_self_forbidden(db: DBConnection) -> None:
-    actor = _actor(db)
+def test_delete_user_requires_superuser(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch, [make_user()])
 
     with pytest.raises(PermissionDenied):
-        user_service.delete_user(conn=db, user_id=actor.id, actor=actor)
+        user_service.delete_user(
+            conn=CONN, user_id=uuid.uuid4(), actor=make_user(is_superuser=False)
+        )
 
 
-def test_delete_missing_user(db: DBConnection) -> None:
-    actor = _actor(db)
+def test_delete_user_self_forbidden(monkeypatch: Any) -> None:
+    admin = make_user(is_superuser=True)
+    install_user_repo(monkeypatch, [admin])
+
+    with pytest.raises(PermissionDenied) as exc:
+        user_service.delete_user(conn=CONN, user_id=admin.id, actor=admin)
+
+    assert exc.value.code is ErrorCode.SELF_DELETE_FORBIDDEN
+
+
+def test_delete_missing_user(monkeypatch: Any) -> None:
+    install_user_repo(monkeypatch)
 
     with pytest.raises(NotFound):
-        user_service.delete_user(conn=db, user_id=uuid.uuid4(), actor=actor)
+        user_service.delete_user(
+            conn=CONN, user_id=uuid.uuid4(), actor=make_user(is_superuser=True)
+        )
+
+
+def test_delete_user_removes_and_commits(monkeypatch: Any) -> None:
+    admin = make_user(email="admin@example.com", is_superuser=True)
+    victim = make_user(email="victim@example.com")
+    repo, commits = install_user_repo(monkeypatch, [admin, victim])
+
+    user_service.delete_user(conn=CONN, user_id=victim.id, actor=admin)
+
+    assert victim.id not in repo.users
+    assert len(commits) == 1
+
+
+def test_delete_me_forbidden_for_superuser(monkeypatch: Any) -> None:
+    admin = make_user(is_superuser=True)
+    install_user_repo(monkeypatch, [admin])
+
+    with pytest.raises(PermissionDenied):
+        user_service.delete_me(conn=CONN, actor=admin)
+
+
+def test_delete_me_removes_and_commits(monkeypatch: Any) -> None:
+    user = make_user()
+    repo, commits = install_user_repo(monkeypatch, [user])
+
+    user_service.delete_me(conn=CONN, actor=user)
+
+    assert user.id not in repo.users
+    assert len(commits) == 1
