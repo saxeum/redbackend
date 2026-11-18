@@ -58,8 +58,14 @@ def get_current_user(conn: ConnDep, token: TokenDep) -> User:
     try:
         user_id = uuid.UUID(token_data.sub)
     except ValueError:
-        raise NotFound(ErrorCode.USER_NOT_FOUND)
-    return user_service.get_active_user(conn=conn, user_id=user_id)
+        # A subject that is not a user id is a malformed credential.
+        raise AuthenticationFailed(ErrorCode.INVALID_TOKEN)
+    try:
+        return user_service.get_active_user(conn=conn, user_id=user_id)
+    except NotFound:
+        # The token is validly signed but names a user that no longer exists.
+        # That is an invalid credential (401), not a missing resource (404).
+        raise AuthenticationFailed(ErrorCode.INVALID_TOKEN)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
