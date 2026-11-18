@@ -9,6 +9,10 @@ from app.api.schemas import (
     ItemListResponse,
     ItemResponse,
     ItemUpdateRequest,
+    MailListResponse,
+    MailMessageDetailResponse,
+    MailMessageResponse,
+    MailPollResponse,
     MeUpdateRequest,
     SignupRequest,
     UserCreateRequest,
@@ -17,6 +21,7 @@ from app.api.schemas import (
     UserUpdateRequest,
 )
 from app.domain.commands import CreateItem, CreateUser, UpdateItem, UpdateUser
+from app.domain.mail import MailMessage, PollResult
 from app.domain.models import Item, User
 
 # --- requests -> commands -------------------------------------------------
@@ -104,4 +109,40 @@ def to_item_response(item: Item) -> ItemResponse:
 def to_item_list_response(items: list[Item], count: int) -> ItemListResponse:
     return ItemListResponse(
         data=[to_item_response(item) for item in items], count=count
+    )
+
+
+def to_mail_message_response(mail: MailMessage) -> MailMessageResponse:
+    return MailMessageResponse(
+        id=mail.id,
+        mailbox=mail.mailbox,
+        remote_id=mail.remote_id,
+        thread_id=mail.thread_id,
+        from_address=mail.from_address,
+        subject=mail.subject,
+        snippet=mail.snippet,
+        received_at=mail.received_at,
+    )
+
+
+def to_mail_message_detail_response(mail: MailMessage) -> MailMessageDetailResponse:
+    return MailMessageDetailResponse(
+        **to_mail_message_response(mail).model_dump(), body=mail.body
+    )
+
+
+def to_mail_list_response(messages: list[MailMessage], count: int) -> MailListResponse:
+    return MailListResponse(
+        data=[to_mail_message_response(mail) for mail in messages], count=count
+    )
+
+
+def to_mail_poll_response(result: PollResult) -> MailPollResponse:
+    return MailPollResponse(
+        mailbox=result.mailbox,
+        mode=result.mode,
+        listed=result.listed,
+        stored=result.stored,
+        skipped=result.skipped,
+        cursor=result.cursor,
     )

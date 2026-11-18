@@ -19,6 +19,9 @@ REQUIRED_PATHS = {
     f"{PREFIX}/users/{{user_id}}",
     f"{PREFIX}/items/",
     f"{PREFIX}/items/{{id}}",
+    f"{PREFIX}/mail/messages",
+    f"{PREFIX}/mail/messages/{{mail_id}}",
+    f"{PREFIX}/mail/poll",
     f"{PREFIX}/utils/config",
     f"{PREFIX}/utils/health-check/",
 }

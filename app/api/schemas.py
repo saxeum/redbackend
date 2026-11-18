@@ -92,6 +92,35 @@ class ItemListResponse(BaseModel):
     count: int
 
 
+class MailMessageResponse(BaseModel):
+    id: uuid.UUID
+    mailbox: str
+    remote_id: str
+    thread_id: str
+    from_address: str
+    subject: str | None
+    snippet: str
+    received_at: datetime
+
+
+class MailMessageDetailResponse(MailMessageResponse):
+    body: str
+
+
+class MailListResponse(BaseModel):
+    data: list[MailMessageResponse]
+    count: int
+
+
+class MailPollResponse(BaseModel):
+    mailbox: str
+    mode: str
+    listed: int
+    stored: int
+    skipped: int
+    cursor: str
+
+
 class MessageResponse(BaseModel):
     message: str
 

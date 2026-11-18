@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 from app.api.mappers import (
     to_create_user,
     to_item_response,
+    to_mail_list_response,
+    to_mail_message_detail_response,
+    to_mail_message_response,
+    to_mail_poll_response,
     to_me_update,
     to_signup,
     to_update_user,
@@ -19,7 +23,9 @@ from app.api.schemas import (
     UserCreateRequest,
     UserUpdateRequest,
 )
+from app.domain.mail import PollResult
 from app.domain.models import Item, User
+from tests.fakes import make_mail
 
 
 def _user() -> User:
@@ -109,3 +115,31 @@ def test_item_response_mapping() -> None:
 
     assert response.owner_id == owner_id
     assert response.title == "thing"
+
+
+def test_mail_mappers_pin_the_contract() -> None:
+    mail = make_mail(subject="Invoice", body="please pay")
+
+    summary = to_mail_message_response(mail)
+    detail = to_mail_message_detail_response(mail)
+    listed = to_mail_list_response([mail], 1)
+    poll = to_mail_poll_response(
+        PollResult(
+            mailbox="inbox@example.com",
+            mode="full",
+            listed=1,
+            stored=1,
+            skipped=0,
+            cursor="900",
+        )
+    )
+
+    assert summary.subject == "Invoice"
+    assert "body" not in summary.model_dump()
+    assert detail.body == "please pay"
+    assert listed.count == 1
+    assert listed.data[0].id == mail.id
+    assert poll.mailbox == "inbox@example.com"
+    assert poll.mode == "full"
+    assert poll.cursor == "900"
+    assert poll.stored == 1

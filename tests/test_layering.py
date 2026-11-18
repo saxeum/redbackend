@@ -3,6 +3,7 @@
     api -> services -> domain
              |
              +-> repositories -> domain
+             +-> clients -> domain
 
 Nothing inner may import something outer. This is the invariant that keeps the
 service layer usable from a CLI or worker, and the domain free of FastAPI.
@@ -15,9 +16,10 @@ APP_ROOT = Path(__file__).resolve().parent.parent / "app"
 
 # layer -> prefixes it must not import
 FORBIDDEN_IMPORTS: dict[str, tuple[str, ...]] = {
-    "domain": ("app.api", "app.services", "app.repositories"),
+    "domain": ("app.api", "app.services", "app.repositories", "app.clients"),
     "services": ("app.api",),
     "repositories": ("app.api", "app.services"),
+    "clients": ("app.api", "app.services", "app.repositories"),
 }
 
 
