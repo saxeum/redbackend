@@ -56,6 +56,7 @@ Testing is layered to match the code: each layer mocks the one below it.
 |---|---|---|
 | Controllers (`app/api`) | `tests/api/test_controllers_*`, `test_deps.py` | services mocked (`monkeypatch` + `app.dependency_overrides`) |
 | Services (`app/services`) | `tests/services/` | repositories mocked (`tests/fakes.py`) |
+| Core (`app/core`) | `tests/core/` | JWKS replaced with a locally generated key |
 | Repositories (`app/repositories`) | `tests/repositories/` | **real PostgreSQL — not mocked** |
 | Contract | `test_mappers.py`, `test_error_mapping.py`, `test_openapi.py` | none |
 | Architecture | `test_layering.py` | none (AST) |
@@ -87,6 +88,52 @@ make format    # ruff format
 `[tool.basedpyright]` sets `typeCheckingMode = "standard"`, resolves imports
 from `.venv`, and covers `app/`, `tests/` and `migrations/`. CI runs the same
 `make lint`.
+
+## Authentication
+
+Two ways to obtain a bearer credential:
+
+| Flow | Entry point | Credential |
+|---|---|---|
+| Google sign-in (OIDC authorization code) | `GET /api/v1/auth/google/start` | our HS256 JWT |
+| Password grant (dev only) | `POST /api/v1/login/access-token` | our HS256 JWT |
+
+**Google sign-in.** The SPA navigates to `/api/v1/auth/google/start`. The
+backend generates state + PKCE, sets a short-lived httpOnly cookie, and
+redirects to Google. Google returns the authorization code to the registered
+`GOOGLE_REDIRECT_URI` (`/auth`), where the backend exchanges it using the
+server-side client secret, verifies the resulting ID token against Google's
+JWKS (signature, `iss`, `aud`, `exp`), resolves the local account, and issues
+our own access token. It then redirects to
+`${FRONTEND_HOST}/auth/callback#access_token=...`.
+
+The client secret never reaches the SPA. `POST /api/v1/auth/google` remains as
+a resource-server adapter for clients that can obtain a Google ID token
+directly; the browser flow uses the redirect endpoint.
+
+First sign-in creates a `user` row with no password; an email that already
+exists is *linked* by storing Google's `sub` in `user.google_sub`, and the local
+password keeps working. Accounts deactivated here cannot sign in through Google
+either.
+
+Configuration (see `.env.example`):
+
+| Variable | Meaning |
+|---|---|
+| `GOOGLE_CLIENT_ID` | OAuth client id. Unset means Google sign-in is disabled. |
+| `GOOGLE_CLIENT_SECRET` | Server-side client secret. Never expose it in the SPA. |
+| `GOOGLE_REDIRECT_URI` | Must exactly match an Authorized redirect URI on the OAuth client. Default: `http://localhost:8000/auth`. |
+| `ALLOWED_EMAILS` | Comma-separated allowlist of Google accounts. Empty means any verified account. |
+| `ENABLE_PASSWORD_LOGIN` | `false` disables the password grant and rejects outstanding password-grant tokens. |
+
+Invalid, expired, or wrongly-scoped ID tokens produce a generic failure
+redirect; an account outside the allowlist redirects with
+`google_error=not_allowed`. `GET /api/v1/utils/config` reports
+`{"password_login": bool, "google_login": bool, "google_client_id": str | null}`
+so one image can serve both modes. `UserResponse.has_password` tells the UI
+whether to offer "change password" — accounts created through Google have none.
+Public self-registration follows the password flag, since it only exists to
+create password accounts.
 
 ## Migrations
 

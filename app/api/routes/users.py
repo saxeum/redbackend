@@ -109,7 +109,11 @@ def delete_user_me(conn: ConnDep, actor: CurrentUser) -> MessageResponse:
 @router.post(
     "/signup",
     response_model=UserResponse,
-    responses=api_responses(ErrorCode.EMAIL_TAKEN_ON_CREATE, auth=False),
+    responses=api_responses(
+        ErrorCode.EMAIL_TAKEN_ON_CREATE,
+        ErrorCode.PASSWORD_LOGIN_DISABLED,
+        auth=False,
+    ),
 )
 def register_user(payload: SignupRequest, conn: ConnDep) -> UserResponse:
     """Create a new user without being logged in."""

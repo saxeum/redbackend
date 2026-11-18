@@ -40,7 +40,16 @@ def test_read_me_maps_the_actor(
     body = response.json()
     assert body["email"] == "me@example.com"
     assert body["full_name"] == "Me"
+    assert body["has_password"] is True
     assert "hashed_password" not in body
+
+
+def test_read_me_reports_a_google_only_account(
+    client: TestClient, as_user: Callable[[User], None]
+) -> None:
+    as_user(make_user(email="google@example.com", hashed_password=None))
+
+    assert client.get(f"{API}/users/me").json()["has_password"] is False
 
 
 def test_list_users_returns_page(
@@ -279,6 +288,27 @@ def test_signup_conflict_is_a_bad_request(
 
     assert response.status_code == 400
     assert response.json()["detail"] == detail(ErrorCode.EMAIL_TAKEN_ON_CREATE)
+
+
+def test_signup_is_404_when_the_password_grant_is_disabled(
+    client: TestClient,
+    as_anonymous: Callable[[], None],
+    monkeypatch: Any,
+) -> None:
+    as_anonymous()
+
+    def fake_signup(*, conn: Any, cmd: Any) -> User:
+        raise InvalidOperation(ErrorCode.PASSWORD_LOGIN_DISABLED)
+
+    monkeypatch.setattr("app.services.users.signup", fake_signup)
+
+    response = client.post(
+        f"{API}/users/signup",
+        json={"email": "new@example.com", "password": "password123"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == detail(ErrorCode.PASSWORD_LOGIN_DISABLED)
 
 
 def test_read_user_by_id(

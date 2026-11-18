@@ -32,9 +32,17 @@ MESSAGES: dict[ErrorCode, MessageSpec] = {
     ErrorCode.EMAIL_TAKEN_ON_CREATE: MessageSpec(
         400, "The user with this email already exists in the system"
     ),
+    ErrorCode.GOOGLE_ACCOUNT_TAKEN: MessageSpec(
+        409, "This Google account is already linked to another user"
+    ),
     ErrorCode.INVALID_CREDENTIALS: MessageSpec(400, "Incorrect email or password"),
     ErrorCode.INCORRECT_PASSWORD: MessageSpec(400, "Incorrect password"),
-    ErrorCode.INVALID_TOKEN: MessageSpec(403, "Could not validate credentials"),
+    ErrorCode.INVALID_TOKEN: MessageSpec(401, "Could not validate credentials"),
+    ErrorCode.EMAIL_NOT_ALLOWED: MessageSpec(
+        403, "This account is not allowed to sign in"
+    ),
+    ErrorCode.PASSWORD_LOGIN_DISABLED: MessageSpec(404, "Password login is disabled"),
+    ErrorCode.GOOGLE_LOGIN_DISABLED: MessageSpec(404, "Google login is disabled"),
     ErrorCode.INACTIVE_USER: MessageSpec(400, "Inactive user"),
     ErrorCode.PASSWORD_UNCHANGED: MessageSpec(
         400, "New password cannot be the same as the current one"

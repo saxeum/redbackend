@@ -1,6 +1,7 @@
 """The presentation <-> domain translation is explicit; pin it down."""
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.api.mappers import (
@@ -40,6 +41,13 @@ def test_user_response_never_exposes_the_hash() -> None:
     assert "hashed_password" not in payload
     assert "secret-hash" not in response.model_dump_json()
     assert payload["email"] == "person@example.com"
+
+
+def test_user_response_reports_whether_a_password_exists() -> None:
+    assert to_user_response(_user()).has_password is True
+    assert (
+        to_user_response(replace(_user(), hashed_password=None)).has_password is False
+    )
 
 
 def test_create_user_mapping() -> None:

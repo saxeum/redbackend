@@ -101,6 +101,21 @@ def main() -> int:
         return "token issued"
 
     check("health check", lambda: call("GET", "/utils/health-check/"))
+
+    def runtime_config() -> str:
+        config = call("GET", "/utils/config")
+        assert isinstance(config["password_login"], bool), config
+        assert isinstance(config["google_login"], bool), config
+        assert "google_client_id" in config, config
+        return f"password_login={config['password_login']}"
+
+    check("runtime config", runtime_config)
+    check(
+        "google sign-in rejects an invalid token -> 401",
+        lambda: call(
+            "POST", "/auth/google", body={"id_token": "not-a-token"}, expect=401
+        ),
+    )
     check("superuser login", super_token)
     check(
         "superuser is flagged",
@@ -136,10 +151,14 @@ def main() -> int:
         return "token issued"
 
     check("user login", user_login)
-    check(
-        "user /users/me",
-        lambda: call("GET", "/users/me", token=state["user"])["email"] == account,
-    )
+
+    def me_shape() -> str:
+        me = call("GET", "/users/me", token=state["user"])
+        assert me["email"] == account, me
+        assert me["has_password"] is True, me
+        return "email and has_password"
+
+    check("user /users/me", me_shape)
     check(
         "user list users -> 403",
         lambda: call("GET", "/users/", token=state["user"], expect=403),

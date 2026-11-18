@@ -4,6 +4,8 @@ from typing import Any
 import pytest
 from pwdlib.hashers.bcrypt import BcryptHasher
 
+from app.core.config import settings
+from app.core.google import GoogleIdentity
 from app.core.security import get_password_hash, verify_password
 from app.domain.commands import CreateUser, UpdateUser
 from app.domain.errors import (
@@ -17,6 +19,15 @@ from app.domain.errors import (
 )
 from app.services import users as user_service
 from tests.fakes import CONN, install_user_repo, make_user
+
+
+def _identity(
+    *,
+    subject: str = "google-subject-1",
+    email: str = "person@example.com",
+    name: str | None = "Person",
+) -> GoogleIdentity:
+    return GoogleIdentity(subject=subject, email=email, email_verified=True, name=name)
 
 
 def test_create_user_requires_superuser(monkeypatch: Any) -> None:
@@ -73,6 +84,21 @@ def test_signup_never_grants_superuser(monkeypatch: Any) -> None:
 
     assert created.is_superuser is False
     assert repo.users[created.id].is_superuser is False
+
+
+def test_signup_is_disabled_with_the_password_grant(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", False)
+    repo, commits = install_user_repo(monkeypatch)
+
+    with pytest.raises(InvalidOperation) as exc:
+        user_service.signup(
+            conn=CONN,
+            cmd=CreateUser(email="new@example.com", password="password123"),
+        )
+
+    assert exc.value.code is ErrorCode.PASSWORD_LOGIN_DISABLED
+    assert repo.users == {}
+    assert commits == []
 
 
 def test_authenticate_success(monkeypatch: Any) -> None:
@@ -140,6 +166,7 @@ def test_authenticate_upgrades_bcrypt_hash(monkeypatch: Any) -> None:
     )
 
     stored = repo.users[authenticated.id]
+    assert stored.hashed_password is not None
     assert stored.hashed_password.startswith("$argon2")
     assert len(commits) == 1
 
@@ -311,7 +338,9 @@ def test_change_password_updates_hash(monkeypatch: Any) -> None:
         new_password="newpassword123",
     )
 
-    verified, _ = verify_password("newpassword123", repo.users[user.id].hashed_password)
+    stored = repo.users[user.id]
+    assert stored.hashed_password is not None
+    verified, _ = verify_password("newpassword123", stored.hashed_password)
     assert verified
     assert len(commits) == 1
 
@@ -371,3 +400,123 @@ def test_delete_me_removes_and_commits(monkeypatch: Any) -> None:
 
     assert user.id not in repo.users
     assert len(commits) == 1
+
+
+def test_authenticate_fails_when_password_login_is_disabled(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "ENABLE_PASSWORD_LOGIN", False)
+    user = make_user(hashed_password=get_password_hash("password123"))
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InvalidOperation) as exc:
+        user_service.authenticate(conn=CONN, email=user.email, password="password123")
+
+    assert exc.value.code is ErrorCode.PASSWORD_LOGIN_DISABLED
+
+
+def test_authenticate_rejects_an_account_without_a_password(monkeypatch: Any) -> None:
+    user = make_user(hashed_password=None, google_sub="google-subject-1")
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InvalidCredentials) as exc:
+        user_service.authenticate(conn=CONN, email=user.email, password="password123")
+
+    assert exc.value.code is ErrorCode.INVALID_CREDENTIALS
+
+
+def test_change_password_requires_a_local_password(monkeypatch: Any) -> None:
+    user = make_user(hashed_password=None, google_sub="google-subject-1")
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InvalidCredentials) as exc:
+        user_service.change_password(
+            conn=CONN,
+            actor=user,
+            current_password="password123",
+            new_password="newpassword123",
+        )
+
+    assert exc.value.code is ErrorCode.INCORRECT_PASSWORD
+
+
+def test_google_login_creates_an_account(monkeypatch: Any) -> None:
+    repo, commits = install_user_repo(monkeypatch)
+
+    created = user_service.login_with_google(
+        conn=CONN, identity=_identity(email="Person@Example.com")
+    )
+
+    assert created.email == "person@example.com"
+    assert created.google_sub == "google-subject-1"
+    assert created.full_name == "Person"
+    assert created.hashed_password is None
+    assert created.is_active is True
+    assert created.is_superuser is False
+    assert repo.users[created.id] == created
+    assert len(commits) == 1
+
+
+def test_google_login_returns_a_known_subject_without_writing(monkeypatch: Any) -> None:
+    user = make_user(google_sub="google-subject-1")
+    _, commits = install_user_repo(monkeypatch, [user])
+
+    assert user_service.login_with_google(conn=CONN, identity=_identity()) == user
+    assert commits == []
+
+
+def test_google_login_links_an_existing_email(monkeypatch: Any) -> None:
+    user = make_user(
+        email="person@example.com", hashed_password=get_password_hash("password123")
+    )
+    repo, commits = install_user_repo(monkeypatch, [user])
+
+    linked = user_service.login_with_google(conn=CONN, identity=_identity())
+
+    assert linked.id == user.id
+    assert repo.users[user.id].google_sub == "google-subject-1"
+    # The local password keeps working: linking does not replace credentials.
+    assert repo.users[user.id].hashed_password == user.hashed_password
+    assert len(commits) == 1
+
+
+def test_google_login_rejects_an_email_outside_the_allowlist(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "ALLOWED_EMAILS", "other@example.com")
+    repo, commits = install_user_repo(monkeypatch)
+
+    with pytest.raises(PermissionDenied) as exc:
+        user_service.login_with_google(conn=CONN, identity=_identity())
+
+    assert exc.value.code is ErrorCode.EMAIL_NOT_ALLOWED
+    assert repo.users == {}
+    assert commits == []
+
+
+def test_google_allowlist_is_case_insensitive(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        settings, "ALLOWED_EMAILS", " Person@Example.com , other@example.com "
+    )
+    install_user_repo(monkeypatch)
+
+    created = user_service.login_with_google(conn=CONN, identity=_identity())
+
+    assert created.email == "person@example.com"
+
+
+def test_google_login_rejects_an_inactive_linked_account(monkeypatch: Any) -> None:
+    user = make_user(google_sub="google-subject-1", is_active=False)
+    install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InactiveUser) as exc:
+        user_service.login_with_google(conn=CONN, identity=_identity())
+
+    assert exc.value.code is ErrorCode.INACTIVE_USER
+
+
+def test_google_login_does_not_link_an_inactive_account(monkeypatch: Any) -> None:
+    user = make_user(email="person@example.com", is_active=False)
+    repo, commits = install_user_repo(monkeypatch, [user])
+
+    with pytest.raises(InactiveUser):
+        user_service.login_with_google(conn=CONN, identity=_identity())
+
+    assert repo.users[user.id].google_sub is None
+    assert commits == []

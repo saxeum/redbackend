@@ -9,6 +9,7 @@ from app.core.config import settings
 PREFIX = settings.API_V1_STR
 
 REQUIRED_PATHS = {
+    f"{PREFIX}/auth/google",
     f"{PREFIX}/login/access-token",
     f"{PREFIX}/login/test-token",
     f"{PREFIX}/users/",
@@ -18,6 +19,7 @@ REQUIRED_PATHS = {
     f"{PREFIX}/users/{{user_id}}",
     f"{PREFIX}/items/",
     f"{PREFIX}/items/{{id}}",
+    f"{PREFIX}/utils/config",
     f"{PREFIX}/utils/health-check/",
 }
 

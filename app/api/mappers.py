@@ -80,6 +80,7 @@ def to_user_response(user: User) -> UserResponse:
         full_name=user.full_name,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        has_password=user.hashed_password is not None,
         created_at=user.created_at,
     )
 

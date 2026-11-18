@@ -60,6 +60,37 @@
         "title": "Body_login-login_access_token",
         "type": "object"
       },
+      "ConfigResponse": {
+        "description": "Public runtime settings the SPA reads before it renders a login form.",
+        "properties": {
+          "google_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Client Id"
+          },
+          "google_login": {
+            "title": "Google Login",
+            "type": "boolean"
+          },
+          "password_login": {
+            "title": "Password Login",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "password_login",
+          "google_login",
+          "google_client_id"
+        ],
+        "title": "ConfigResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "Shape of every domain error returned by the API.",
         "properties": {
@@ -72,6 +103,21 @@
           "detail"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "GoogleTokenRequest": {
+        "description": "A Google OpenID Connect ID token, as issued to the SPA.",
+        "properties": {
+          "id_token": {
+            "minLength": 1,
+            "title": "Id Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id_token"
+        ],
+        "title": "GoogleTokenRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -410,6 +456,10 @@
             ],
             "title": "Full Name"
           },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -430,6 +480,7 @@
           "full_name",
           "is_active",
           "is_superuser",
+          "has_password",
           "created_at"
         ],
         "title": "UserResponse",
@@ -560,6 +611,108 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/google": {
+      "post": {
+        "description": "Validate a Google ID token and return the local account it identifies.",
+        "operationId": "auth-login_with_google",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Inactive user"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "This account is not allowed to sign in"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "summary": "Login With Google",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/google/start": {
+      "get": {
+        "description": "Begin the authorization-code flow with Google.",
+        "operationId": "auth-google_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Google Start",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/items/": {
       "get": {
         "description": "Retrieve items visible to the caller.",
@@ -597,7 +750,7 @@
             },
             "description": "Successful Response"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -662,7 +815,7 @@
             },
             "description": "Successful Response"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -731,6 +884,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -739,7 +902,7 @@
                 }
               }
             },
-            "description": "Not enough permissions / Could not validate credentials"
+            "description": "Not enough permissions"
           },
           "404": {
             "content": {
@@ -808,6 +971,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -816,7 +989,7 @@
                 }
               }
             },
-            "description": "Not enough permissions / Could not validate credentials"
+            "description": "Not enough permissions"
           },
           "404": {
             "content": {
@@ -895,6 +1068,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -903,7 +1086,7 @@
                 }
               }
             },
-            "description": "Not enough permissions / Could not validate credentials"
+            "description": "Not enough permissions"
           },
           "404": {
             "content": {
@@ -982,6 +1165,16 @@
             },
             "description": "Incorrect email or password / Inactive user"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Password login is disabled"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1024,7 +1217,7 @@
             },
             "description": "Successful Response"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1093,6 +1286,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1101,7 +1304,7 @@
                 }
               }
             },
-            "description": "The user doesn't have enough privileges / Could not validate credentials"
+            "description": "The user doesn't have enough privileges"
           },
           "422": {
             "content": {
@@ -1168,6 +1371,16 @@
             },
             "description": "The user with this email already exists in the system"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1176,7 +1389,7 @@
                 }
               }
             },
-            "description": "The user doesn't have enough privileges / Could not validate credentials"
+            "description": "The user doesn't have enough privileges"
           },
           "422": {
             "content": {
@@ -1225,6 +1438,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1233,7 +1456,7 @@
                 }
               }
             },
-            "description": "Super users are not allowed to delete themselves / Could not validate credentials"
+            "description": "Super users are not allowed to delete themselves"
           },
           "503": {
             "content": {
@@ -1270,7 +1493,7 @@
             },
             "description": "Successful Response"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1325,7 +1548,7 @@
             },
             "description": "Successful Response"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1412,7 +1635,7 @@
             },
             "description": "Incorrect password / New password cannot be the same as the current one"
           },
-          "403": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1489,6 +1712,16 @@
             },
             "description": "The user with this email already exists in the system"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Password login is disabled"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1543,6 +1776,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1551,7 +1794,7 @@
                 }
               }
             },
-            "description": "The user doesn't have enough privileges / Super users are not allowed to delete themselves / Could not validate credentials"
+            "description": "The user doesn't have enough privileges / Super users are not allowed to delete themselves"
           },
           "404": {
             "content": {
@@ -1620,6 +1863,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1628,7 +1881,7 @@
                 }
               }
             },
-            "description": "The user doesn't have enough privileges / Could not validate credentials"
+            "description": "The user doesn't have enough privileges"
           },
           "404": {
             "content": {
@@ -1707,6 +1960,16 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Could not validate credentials"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1715,7 +1978,7 @@
                 }
               }
             },
-            "description": "The user doesn't have enough privileges / Could not validate credentials"
+            "description": "The user doesn't have enough privileges"
           },
           "404": {
             "content": {
@@ -1766,6 +2029,38 @@
         "summary": "Update User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/utils/config": {
+      "get": {
+        "description": "Which sign-in methods this deployment offers (public, no secrets).",
+        "operationId": "utils-read_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service temporarily unavailable"
+          }
+        },
+        "summary": "Read Config",
+        "tags": [
+          "utils"
         ]
       }
     },

@@ -16,9 +16,13 @@ class ErrorCode(StrEnum):
     SELF_DELETE_FORBIDDEN = "self_delete_forbidden"
     EMAIL_TAKEN = "email_taken"
     EMAIL_TAKEN_ON_CREATE = "email_taken_on_create"
+    GOOGLE_ACCOUNT_TAKEN = "google_account_taken"
     INVALID_CREDENTIALS = "invalid_credentials"
     INCORRECT_PASSWORD = "incorrect_password"
     INVALID_TOKEN = "invalid_token"
+    EMAIL_NOT_ALLOWED = "email_not_allowed"
+    PASSWORD_LOGIN_DISABLED = "password_login_disabled"
+    GOOGLE_LOGIN_DISABLED = "google_login_disabled"
     INACTIVE_USER = "inactive_user"
     PASSWORD_UNCHANGED = "password_unchanged"
 

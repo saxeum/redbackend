@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     # Dev-only router (app/api/routes/private.py); kept out of the OpenAPI artifact.
     ENABLE_PRIVATE_ROUTER: bool = False
 
+    # Google OIDC. Same OAuth client as zuchat; ID tokens are issued for this
+    # client id (audience), so no client secret is needed for token validation.
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth"
+    # Comma-separated allowlist. Empty means "any verified Google account".
+    ALLOWED_EMAILS: str = ""
+    # Password grant stays available during the OIDC migration; turn it off in prod.
+    ENABLE_PASSWORD_LOGIN: bool = True
+
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
     DATABASE_URL: PostgresDsn
@@ -34,6 +44,14 @@ class Settings(BaseSettings):
 
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
+
+    @property
+    def allowed_emails(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.ALLOWED_EMAILS.split(",")
+            if item.strip()
+        }
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
