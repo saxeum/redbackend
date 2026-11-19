@@ -25,6 +25,7 @@ def db() -> Generator[DBConnection]:
         yield conn
         conn.execute("DELETE FROM item")
         conn.execute("DELETE FROM mail_message")
+        conn.execute("DELETE FROM mailbox_cursor")
         conn.execute('DELETE FROM "user"')
     finally:
         conn.close()

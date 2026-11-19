@@ -71,7 +71,9 @@ make e2e                  # HTTP smoke checks against a running stack
 
 Coverage HTML is written to `htmlcov/index.html`.
 
-Note: the test session deletes all users and items in the configured database.
+Note: the test session deletes all users, items, stored mail, and mailbox cursors
+in the configured database. Clearing the cursor ensures the next poll performs
+a full sync instead of skipping the deleted messages.
 Use `make db-seed` to restore the first superuser afterwards.
 
 ## Type checking and linting
